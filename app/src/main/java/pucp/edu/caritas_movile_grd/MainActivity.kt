@@ -4,31 +4,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalContext
 import pucp.edu.caritas_movile_grd.login.LoginScreen
-import pucp.edu.caritas_movile_grd.login.LoginViewModel
-import pucp.edu.caritas_movile_grd.login.LoginRepository
-import pucp.edu.caritas_movile_grd.home.HomeScreen
+import pucp.edu.caritas_movile_grd.home.MainScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaScreen
-import pucp.edu.caritas_movile_grd.Incidencias.HistorialScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaRepository
-import pucp.edu.caritas_movile_grd.Cursos.AcademiaScreen
-import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
 import pucp.edu.caritas_movile_grd.Cursos.CursoRepository
+import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
 import pucp.edu.caritas_movile_grd.Kits.EntregaKitScreen
-import pucp.edu.caritas_movile_grd.Kits.KitViewModel
 import pucp.edu.caritas_movile_grd.Kits.KitRepository
+import pucp.edu.caritas_movile_grd.Kits.KitViewModel
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroViewModel
 import pucp.edu.caritas_movile_grd.LocalBDConector.AppDatabase
 import pucp.edu.caritas_movile_grd.ui.theme.Caritas_Movile_GRDTheme
 
@@ -50,23 +43,40 @@ fun AppNavigation() {
     val context = LocalContext.current
     val database = AppDatabase.getDatabase(context)
 
-    // Inicialización de Repositorios
-    val loginRepository = LoginRepository(database.loginDao())
     val incidenciaRepository = IncidenciaRepository(database.incidenciaDao())
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
+    val simulacroRepository = SimulacroRepository(database.simulacroDao())
 
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
-            LoginScreen(onLoginSuccess = { username ->
-                navController.navigate("home")
+            LoginScreen(onLoginSuccess = { _ ->
+                navController.navigate("main") {
+                    popUpTo("login") { inclusive = true }
+                }
             })
         }
-        composable("home") {
-            HomeScreen(
-                userName = "Brigadista", 
-                onNavigate = { route -> navController.navigate(route) },
-                onLogout = { navController.navigate("login") }
+        composable("main") {
+            val incidenciaViewModel: IncidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
+            )
+            val cursoViewModel: CursoViewModel = viewModel(
+                factory = GenericViewModelFactory { CursoViewModel(cursoRepository) }
+            )
+            val simulacroViewModel: SimulacroViewModel = viewModel(
+                factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
+            )
+            MainScreen(
+                incidenciaViewModel = incidenciaViewModel,
+                cursoViewModel = cursoViewModel,
+                simulacroViewModel = simulacroViewModel,
+                onReportarIncidencia = { navController.navigate("reportar_incidencia") },
+                onEntregaKits = { navController.navigate("entrega_kits") },
+                onLogout = {
+                    navController.navigate("login") {
+                        popUpTo("main") { inclusive = true }
+                    }
+                }
             )
         }
         composable("reportar_incidencia") {
@@ -75,29 +85,10 @@ fun AppNavigation() {
             )
             IncidenciaScreen(
                 onBack = { navController.popBackStack() },
-                onSave = { incidencia -> 
+                onSave = { incidencia ->
                     viewModel.guardarIncidencia(incidencia)
-                    navController.popBackStack() 
+                    navController.popBackStack()
                 }
-            )
-        }
-        composable("historial") {
-            val viewModel: IncidenciaViewModel = viewModel(
-                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
-            )
-            HistorialScreen(
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() }
-            )
-        }
-        composable("cursos") {
-            val viewModel: CursoViewModel = viewModel(
-                factory = GenericViewModelFactory { CursoViewModel(cursoRepository) }
-            )
-            AcademiaScreen(
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onNavigateToCurso = { /* Navegar a detalle */ }
             )
         }
         composable("entrega_kits") {
@@ -106,9 +97,9 @@ fun AppNavigation() {
             )
             EntregaKitScreen(
                 onBack = { navController.popBackStack() },
-                onConfirmarEntrega = { entrega -> 
+                onConfirmarEntrega = { entrega ->
                     viewModel.realizarEntrega(entrega)
-                    navController.popBackStack() 
+                    navController.popBackStack()
                 }
             )
         }

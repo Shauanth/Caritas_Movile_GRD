@@ -9,18 +9,21 @@ import pucp.edu.caritas_movile_grd.Masters.*
 @Entity(
     tableName = "incidencia_local",
     foreignKeys = [
-        ForeignKey(entity = ParroquiaLocal::class, parentColumns = ["idParroquia"], childColumns = ["idParroquia"]),
-        ForeignKey(entity = CatalogoLocal::class, parentColumns = ["idCatalogo"], childColumns = ["idCatalogoTipo"])
+        ForeignKey(entity = ParroquiaLocal::class, parentColumns = ["idParroquia"], childColumns = ["idParroquia"], deferred = true),
+        ForeignKey(entity = CatalogoLocal::class, parentColumns = ["idCatalogo"], childColumns = ["idCatalogoTipo"], deferred = true)
     ]
 )
 data class IncidenciaLocal(
     @PrimaryKey val uuidIncidencia: String,
-    val idIncidenciaRemota: Int? = null, // Nulo hasta que se sincronice
+    val idIncidenciaRemota: Int? = null,
     val uuidUsuario: String,
     val idParroquia: Int,
-    val idCatalogoTipo: Int, // Ej: ID de "Incendio"
+    val idCatalogoTipo: Int,
     val descripcion: String,
-    val estado: String, // "Activa", "Cerrada"
+    val nombre: String = "",           // título del incidente
+    val numAfectados: Int = 0,
+    val responsable: String = "Brigadista",
+    val estado: String,                // "ABIERTO", "ASIGNADO", "DATA RECOPILADA", etc.
     val estadoSync: EstadoSync = EstadoSync.NUEVO,
-    val fechaUltimaModificacion: Long // Timestamp (System.currentTimeMillis())
+    val fechaUltimaModificacion: Long
 )

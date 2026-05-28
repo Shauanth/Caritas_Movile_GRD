@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:\\\\Users\\\\Luis\\\\Downloads\\\\\" | Select-String -Pattern \"Disaster\")",
+      "Bash(Get-ChildItem -Path \"F:\\\\PUCP\\\\Caritas_Movile_GRD\" -Recurse -Depth 3)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"F:\\\\PUCP\\\\Caritas_Movile_GRD\\\\app\\\\src\\\\main\\\\res\" -Recurse | Where-Object { -not $_.PSIsContainer } | Select-Object FullName)",
+      "Bash(powershell -Command \"Expand-Archive -Path 'Disaster Risk Management Dashboard \\(1\\).zip' -DestinationPath 'GRD_Web_Extract' -Force\")",
+      "Bash(powershell -Command \"Expand-Archive -Path 'C:\\\\Users\\\\Luis\\\\Downloads\\\\Disaster Risk Management Dashboard \\(1\\).zip' -DestinationPath 'C:\\\\Users\\\\Luis\\\\Downloads\\\\GRD_Web_Extract' -Force; Write-Host 'Done'\")",
+      "Bash(powershell -Command \"Get-ChildItem -Recurse 'C:\\\\Users\\\\Luis\\\\Downloads\\\\GRD_Web_Extract' | Select-Object FullName | Format-Table -AutoSize\")"
+    ]
+  }
+}

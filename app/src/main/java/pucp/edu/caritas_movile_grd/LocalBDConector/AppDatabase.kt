@@ -10,6 +10,7 @@ import pucp.edu.caritas_movile_grd.Incidencias.*
 import pucp.edu.caritas_movile_grd.Masters.*
 import pucp.edu.caritas_movile_grd.login.*
 import pucp.edu.caritas_movile_grd.Evidencias.*
+import pucp.edu.caritas_movile_grd.Simulacros.*
 
 @Database(
     entities = [
@@ -26,9 +27,10 @@ import pucp.edu.caritas_movile_grd.Evidencias.*
         ParroquiaLocal::class,
         CatalogoLocal::class,
         PerfilUsuarioLocal::class,
-        AsignacionTerritorio::class
+        AsignacionTerritorio::class,
+        SimulacroLocal::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -39,6 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun loginDao(): LoginDao
     abstract fun masterDao(): MasterDao
     abstract fun syncDao(): SyncDao
+    abstract fun simulacroDao(): SimulacroDao
 
     companion object {
         @Volatile
@@ -50,7 +53,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "caritas_grd_db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

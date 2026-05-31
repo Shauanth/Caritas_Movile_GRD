@@ -13,8 +13,14 @@ import androidx.navigation.compose.rememberNavController
 import pucp.edu.caritas_movile_grd.login.LoginScreen
 import pucp.edu.caritas_movile_grd.home.MainScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaScreen
+import pucp.edu.caritas_movile_grd.Incidencias.RegistrarEventoScreen
+import pucp.edu.caritas_movile_grd.Incidencias.RealizarActividadScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaRepository
+import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaRepository
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaScreen
 import pucp.edu.caritas_movile_grd.Cursos.CursoRepository
 import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
 import pucp.edu.caritas_movile_grd.Kits.EntregaKitScreen
@@ -44,6 +50,7 @@ fun AppNavigation() {
     val database = AppDatabase.getDatabase(context)
 
     val incidenciaRepository = IncidenciaRepository(database.incidenciaDao())
+    val evidenciaRepository = EvidenciaRepository(database.evidenciaDao())
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
@@ -71,6 +78,8 @@ fun AppNavigation() {
                 cursoViewModel = cursoViewModel,
                 simulacroViewModel = simulacroViewModel,
                 onReportarIncidencia = { navController.navigate("reportar_incidencia") },
+                onRealizarActividad = { uuid -> navController.navigate("realizar_actividad/$uuid") },
+                onSubirEvidencia = { uuid -> navController.navigate("subir_evidencia/$uuid") },
                 onEntregaKits = { navController.navigate("entrega_kits") },
                 onLogout = {
                     navController.navigate("login") {
@@ -83,12 +92,34 @@ fun AppNavigation() {
             val viewModel: IncidenciaViewModel = viewModel(
                 factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
             )
-            IncidenciaScreen(
+            RegistrarEventoScreen(
                 onBack = { navController.popBackStack() },
                 onSave = { incidencia ->
                     viewModel.guardarIncidencia(incidencia)
                     navController.popBackStack()
                 }
+            )
+        }
+        composable("realizar_actividad/{uuid}") { backStackEntry ->
+            val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
+            val viewModel: IncidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
+            )
+            RealizarActividadScreen(
+                uuidIncidencia = uuid,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("subir_evidencia/{uuid}") { backStackEntry ->
+            val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
+            val viewModel: EvidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository) }
+            )
+            EvidenciaScreen(
+                uuidReferencia = uuid,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
             )
         }
         composable("entrega_kits") {

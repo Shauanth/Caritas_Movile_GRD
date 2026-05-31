@@ -223,7 +223,9 @@ private fun StatusSummaryCard(
 @Composable
 fun GRDScreen(
     viewModel: IncidenciaViewModel,
-    onReportarIncidencia: () -> Unit
+    onReportarIncidencia: () -> Unit,
+    onRealizarActividad: (IncidenciaLocal) -> Unit,
+    onSubirEvidencia: (IncidenciaLocal) -> Unit
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
 
@@ -386,7 +388,11 @@ fun GRDScreen(
                 }
             } else {
                 items(filtradas) { inc ->
-                    IncidenciaCard(incidencia = inc)
+                    IncidenciaCard(
+                        incidencia = inc,
+                        onRealizarActividad = { onRealizarActividad(inc) },
+                        onSubirEvidencia = { onSubirEvidencia(inc) }
+                    )
                 }
             }
         }
@@ -395,7 +401,11 @@ fun GRDScreen(
 
 // ── Tarjeta de incidencia ────────────────────────────────────────────────────
 @Composable
-fun IncidenciaCard(incidencia: IncidenciaLocal) {
+fun IncidenciaCard(
+    incidencia: IncidenciaLocal,
+    onRealizarActividad: () -> Unit,
+    onSubirEvidencia: () -> Unit
+) {
     val textColor  = statusTextColor(incidencia.estado)
     val badgeBg    = statusBg(incidencia.estado)
     val categoria  = CATEGORIA_MAP[incidencia.idCatalogoTipo] ?: "Tipo ${incidencia.idCatalogoTipo}"
@@ -511,7 +521,7 @@ fun IncidenciaCard(incidencia: IncidenciaLocal) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { /* placeholder: realizar actividad */ },
+                    onClick = onRealizarActividad,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -521,7 +531,7 @@ fun IncidenciaCard(incidencia: IncidenciaLocal) {
                     Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedButton(
-                    onClick = { /* placeholder: subir evidencia */ },
+                    onClick = onSubirEvidencia,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(

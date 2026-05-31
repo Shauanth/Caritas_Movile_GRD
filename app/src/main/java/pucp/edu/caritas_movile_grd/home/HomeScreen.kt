@@ -23,6 +23,8 @@ fun MainScreen(
     cursoViewModel: CursoViewModel,
     simulacroViewModel: SimulacroViewModel,
     onReportarIncidencia: () -> Unit,
+    onRealizarActividad: (String) -> Unit,
+    onSubirEvidencia: (String) -> Unit,
     onEntregaKits: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -71,7 +73,9 @@ fun MainScreen(
             when (selectedTab) {
                 0 -> GRDScreen(
                     viewModel = incidenciaViewModel,
-                    onReportarIncidencia = onReportarIncidencia
+                    onReportarIncidencia = onReportarIncidencia,
+                    onRealizarActividad = { inc -> onRealizarActividad(inc.uuidIncidencia) },
+                    onSubirEvidencia = { inc -> onSubirEvidencia(inc.uuidIncidencia) }
                 )
                 1 -> CapacitacionesScreen(viewModel = cursoViewModel)
                 2 -> SimulacrosScreen(viewModel = simulacroViewModel)

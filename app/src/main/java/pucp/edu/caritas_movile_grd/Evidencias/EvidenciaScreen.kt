@@ -2,35 +2,55 @@ package pucp.edu.caritas_movile_grd.Evidencias
 
 import android.Manifest
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
-import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
+
+private enum class TipoEvidencia { IMAGEN, AUDIO, DOCUMENTO }
+
+private fun detectarTipo(context: Context, rutaLocal: String): TipoEvidencia {
+    val mime = try {
+        context.contentResolver.getType(Uri.parse(rutaLocal))
+    } catch (e: Exception) { null } ?: ""
+    return when {
+        mime.startsWith("image") -> TipoEvidencia.IMAGEN
+        mime.startsWith("audio") -> TipoEvidencia.AUDIO
+        else -> TipoEvidencia.DOCUMENTO
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,7 +64,6 @@ fun EvidenciaScreen(
     var showEvidenciaSheet by remember { mutableStateOf(false) }
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
 
-    // --- Activity Result Launchers ---
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
@@ -121,7 +140,7 @@ fun EvidenciaScreen(
                 title = { Text("Evidencias") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Atrás")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
                     }
                 }
             )
@@ -133,8 +152,14 @@ fun EvidenciaScreen(
         }
     ) { padding ->
         if (evidencias.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("No hay evidencias para esta incidencia", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "No hay evidencias para esta incidencia",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             LazyColumn(
@@ -142,7 +167,10 @@ fun EvidenciaScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(evidencias) { evidencia ->
-                    EvidenciaItem(evidencia = evidencia, onDelete = { viewModel.eliminarEvidencia(evidencia) })
+                    EvidenciaItem(
+                        evidencia = evidencia,
+                        onDelete = { viewModel.eliminarEvidencia(evidencia) }
+                    )
                 }
             }
         }
@@ -150,8 +178,18 @@ fun EvidenciaScreen(
 
     if (showEvidenciaSheet) {
         ModalBottomSheet(onDismissRequest = { showEvidenciaSheet = false }) {
-            Column(modifier = Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 32.dp)) {
-                Text("Agregar Evidencia", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    "Agregar Evidencia",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
                 EvidenciaOptionCard(
                     icon = { Icon(Icons.Default.CameraAlt, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                     label = "Tomar Foto",
@@ -179,35 +217,202 @@ fun EvidenciaScreen(
 
 @Composable
 private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
+    val context = LocalContext.current
+    val uri = remember(evidencia.rutaLocal) { Uri.parse(evidencia.rutaLocal) }
+    val tipo = remember(evidencia.rutaLocal) { detectarTipo(context, evidencia.rutaLocal) }
+    var mostrarPreview by remember { mutableStateOf(false) }
+
+    val thumbnail by produceState<ImageBitmap?>(initialValue = null, evidencia.rutaLocal) {
+        if (tipo == TipoEvidencia.IMAGEN) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                        BitmapFactory.decodeStream(stream, null, opts)?.asImageBitmap()
+                    }
+                } catch (e: Exception) { null }
+            }
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
+        onClick = { if (tipo == TipoEvidencia.IMAGEN) mostrarPreview = true },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(evidencia.rutaLocal.split("/").last(), fontWeight = FontWeight.Medium, maxLines = 1)
-                Text(evidencia.estadoSync.name, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Preview o icono según tipo
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+                contentAlignment = Alignment.Center
+            ) {
+                when (tipo) {
+                    TipoEvidencia.IMAGEN -> {
+                        if (thumbnail != null) {
+                            Image(
+                                bitmap = thumbnail!!,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Image,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                    TipoEvidencia.AUDIO -> Icon(
+                        Icons.Default.AudioFile,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    TipoEvidencia.DOCUMENTO -> Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = evidencia.rutaLocal.split("/").last(),
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = when (tipo) {
+                        TipoEvidencia.IMAGEN -> "Imagen"
+                        TipoEvidencia.AUDIO -> "Audio"
+                        TipoEvidencia.DOCUMENTO -> "Documento"
+                    },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                SyncBadge(estadoSync = evidencia.estadoSync)
+            }
+
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Eliminar",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+
+    if (mostrarPreview) {
+        ImagenPreviewDialog(uri = uri, onDismiss = { mostrarPreview = false })
+    }
+}
+
+@Composable
+private fun SyncBadge(estadoSync: EstadoSync) {
+    val (color, label) = when (estadoSync) {
+        EstadoSync.SINCRONIZADO -> MaterialTheme.colorScheme.primary to "Sincronizado"
+        EstadoSync.PENDIENTE_SUBIDA -> Color(0xFFF59E0B) to "Pendiente de subida"
+        EstadoSync.NUEVO -> Color(0xFF6366F1) to "Nuevo"
+        EstadoSync.EDITADO -> Color(0xFFEC4899) to "Editado"
+    }
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.15f)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            fontSize = 10.sp,
+            color = color,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun ImagenPreviewDialog(uri: Uri, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            } catch (e: Exception) { null }
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap!!,
+                    contentDescription = "Preview de evidencia",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.White
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Cerrar",
+                    tint = Color.White
+                )
             }
         }
     }
 }
 
 @Composable
-private fun EvidenciaOptionCard(icon: @Composable () -> Unit, label: String, description: String, onClick: () -> Unit) {
+private fun EvidenciaOptionCard(
+    icon: @Composable () -> Unit,
+    label: String,
+    description: String,
+    onClick: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             icon()
             Spacer(modifier = Modifier.width(16.dp))
             Column {

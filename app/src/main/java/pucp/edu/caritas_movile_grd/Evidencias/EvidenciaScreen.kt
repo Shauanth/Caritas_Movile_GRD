@@ -203,7 +203,20 @@ private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        onClick = { if (tipo == TipoEvidencia.IMAGEN || (tipo == TipoEvidencia.DOCUMENTO && esPdf)) mostrarPreview = true },
+        onClick = {
+            when {
+                tipo == TipoEvidencia.IMAGEN -> mostrarPreview = true
+                tipo == TipoEvidencia.DOCUMENTO && esPdf -> {
+                    try {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/pdf")
+                            flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) { }
+                }
+            }
+        },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
@@ -228,8 +241,9 @@ private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
                     text = when (tipo) { TipoEvidencia.IMAGEN -> "Imagen"; TipoEvidencia.AUDIO -> "Audio"; TipoEvidencia.DOCUMENTO -> "Documento" },
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (tipo == TipoEvidencia.IMAGEN || (tipo == TipoEvidencia.DOCUMENTO && esPdf)) {
-                    Text("Toca para ver", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                when {
+                    tipo == TipoEvidencia.IMAGEN -> Text("Toca para ver", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                    tipo == TipoEvidencia.DOCUMENTO && esPdf -> Text("Toca para abrir", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 SyncBadge(estadoSync = evidencia.estadoSync)

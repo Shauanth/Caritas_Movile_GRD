@@ -4,13 +4,31 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import pucp.edu.caritas_movile_grd.login.LoginScreen
+import pucp.edu.caritas_movile_grd.home.MainScreen
+import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaScreen
+import pucp.edu.caritas_movile_grd.Incidencias.RegistrarEventoScreen
+import pucp.edu.caritas_movile_grd.Incidencias.RealizarActividadScreen
+import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
+import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaRepository
+import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaRepository
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaScreen
+import pucp.edu.caritas_movile_grd.Cursos.CursoRepository
+import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
+import pucp.edu.caritas_movile_grd.Kits.EntregaKitScreen
+import pucp.edu.caritas_movile_grd.Kits.KitRepository
+import pucp.edu.caritas_movile_grd.Kits.KitViewModel
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroViewModel
+import pucp.edu.caritas_movile_grd.LocalBDConector.AppDatabase
 import pucp.edu.caritas_movile_grd.ui.theme.Caritas_Movile_GRDTheme
 
 class MainActivity : ComponentActivity() {
@@ -19,29 +37,111 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Caritas_Movile_GRDTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                AppNavigation()
             }
         }
     }
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
+fun AppNavigation() {
+    val navController = rememberNavController()
+    val context = LocalContext.current
+    val database = AppDatabase.getDatabase(context)
+
+    val incidenciaRepository = IncidenciaRepository(database.incidenciaDao())
+    val evidenciaRepository = EvidenciaRepository(database.evidenciaDao())
+    val cursoRepository = CursoRepository(database.cursoDao())
+    val kitRepository = KitRepository(database.kitDao())
+    val simulacroRepository = SimulacroRepository(database.simulacroDao())
+
+    NavHost(navController = navController, startDestination = "login") {
+        composable("login") {
+            LoginScreen(onLoginSuccess = { _ ->
+                navController.navigate("main") {
+                    popUpTo("login") { inclusive = true }
+                }
+            })
+        }
+        composable("main") {
+            val incidenciaViewModel: IncidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
+            )
+            val cursoViewModel: CursoViewModel = viewModel(
+                factory = GenericViewModelFactory { CursoViewModel(cursoRepository) }
+            )
+            val simulacroViewModel: SimulacroViewModel = viewModel(
+                factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
+            )
+            MainScreen(
+                incidenciaViewModel = incidenciaViewModel,
+                cursoViewModel = cursoViewModel,
+                simulacroViewModel = simulacroViewModel,
+                onReportarIncidencia = { navController.navigate("reportar_incidencia") },
+                onRealizarActividad = { uuid -> navController.navigate("realizar_actividad/$uuid") },
+                onSubirEvidencia = { uuid -> navController.navigate("subir_evidencia/$uuid") },
+                onEntregaKits = { navController.navigate("entrega_kits") },
+                onLogout = {
+                    navController.navigate("login") {
+                        popUpTo("main") { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable("reportar_incidencia") {
+            val viewModel: IncidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
+            )
+            RegistrarEventoScreen(
+                onBack = { navController.popBackStack() },
+                onSave = { incidencia ->
+                    viewModel.guardarIncidencia(incidencia)
+                    navController.popBackStack()
+                }
+            )
+        }
+        composable("realizar_actividad/{uuid}") { backStackEntry ->
+            val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
+            val viewModel: IncidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
+            )
+            RealizarActividadScreen(
+                uuidIncidencia = uuid,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("subir_evidencia/{uuid}") { backStackEntry ->
+            val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
+            val viewModel: EvidenciaViewModel = viewModel(
+                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository) }
+            )
+            EvidenciaScreen(
+                uuidReferencia = uuid,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("entrega_kits") {
+            val viewModel: KitViewModel = viewModel(
+                factory = GenericViewModelFactory { KitViewModel(kitRepository) }
+            )
+            EntregaKitScreen(
+                onBack = { navController.popBackStack() },
+                onConfirmarEntrega = { entrega ->
+                    viewModel.realizarEntrega(entrega)
+                    navController.popBackStack()
+                }
+            )
+        }
+    }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Caritas_Movile_GRDTheme {
-        Greeting("Android")
+// Factory genérica para simplificar la creación de ViewModels sin DI pesado
+class GenericViewModelFactory<T : androidx.lifecycle.ViewModel>(
+    private val creator: () -> T
+) : androidx.lifecycle.ViewModelProvider.Factory {
+    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+        return creator() as T
     }
 }

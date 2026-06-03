@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -67,33 +68,42 @@ fun EvidenciaScreen(
     val evidencias by viewModel.getEvidencias(uuidReferencia).collectAsState(initial = emptyList())
     var showEvidenciaSheet by remember { mutableStateOf(false) }
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    // URI pendiente de confirmación antes de guardar en BD
+    var pendingUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    fun confirmarYGuardar(uris: List<Uri>) {
+        uris.forEach { uri ->
+            viewModel.guardarEvidencia(
+                EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, uri.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA)
+            )
+        }
+        pendingUris = emptyList()
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) cameraImageUri?.let { uri ->
-            viewModel.guardarEvidencia(EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, uri.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA))
-        }
         showEvidenciaSheet = false
+        if (success) cameraImageUri?.let { uri -> pendingUris = listOf(uri) }
     }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        showEvidenciaSheet = false
         uris.forEach { uri ->
             try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { }
-            viewModel.guardarEvidencia(EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, uri.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA))
         }
-        showEvidenciaSheet = false
+        if (uris.isNotEmpty()) pendingUris = uris
     }
     val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        showEvidenciaSheet = false
         uri?.let {
             try { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { }
-            viewModel.guardarEvidencia(EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, it.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA))
+            pendingUris = listOf(it)
         }
-        showEvidenciaSheet = false
     }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        showEvidenciaSheet = false
         uri?.let {
             try { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { }
-            viewModel.guardarEvidencia(EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, it.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA))
+            pendingUris = listOf(it)
         }
-        showEvidenciaSheet = false
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { val uri = crearUriCamara(context); cameraImageUri = uri; cameraLauncher.launch(uri) }
@@ -130,6 +140,15 @@ fun EvidenciaScreen(
                 }
             }
         }
+    }
+
+    if (pendingUris.isNotEmpty()) {
+        PreviewConfirmDialog(
+            uris = pendingUris,
+            context = context,
+            onConfirm = { confirmarYGuardar(pendingUris) },
+            onDiscard = { pendingUris = emptyList() }
+        )
     }
 
     if (showEvidenciaSheet) {
@@ -301,6 +320,165 @@ private fun EvidenciaOptionCard(icon: @Composable () -> Unit, label: String, des
             Column {
                 Text(label, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewConfirmDialog(
+    uris: List<Uri>,
+    context: Context,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit
+) {
+    Dialog(onDismissRequest = onDiscard, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = if (uris.size > 1) "Confirmar ${uris.size} archivos" else "Confirmar archivo",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                // Grilla de previsualizaciones (máx 4 visibles)
+                val visible = uris.take(4)
+                val columns = if (visible.size == 1) 1 else 2
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    visible.chunked(columns).forEach { rowUris ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowUris.forEach { uri ->
+                                PreviewTile(
+                                    uri = uri,
+                                    context = context,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .aspectRatio(if (visible.size == 1) 16f / 9f else 1f)
+                                )
+                            }
+                            // Relleno si la fila tiene solo un elemento en grid de 2
+                            if (rowUris.size < columns) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                if (uris.size > 4) {
+                    Text(
+                        text = "+ ${uris.size - 4} archivo(s) más",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDiscard,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Descartar")
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009850))
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Guardar")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewTile(uri: Uri, context: Context, modifier: Modifier = Modifier) {
+    val tipo = remember(uri) { detectarTipo(context, uri.toString()) }
+    val esPdf = remember(uri) {
+        val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+        val ext  = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: ""
+        mime == "application/pdf" || ext == "pdf"
+    }
+    val nombre = remember(uri) {
+        uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString().substringAfterLast('/')
+    }
+
+    val thumbnail by produceState<ImageBitmap?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) {
+            try {
+                when {
+                    tipo == TipoEvidencia.IMAGEN -> {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                            BitmapFactory.decodeStream(stream, null, opts)?.asImageBitmap()
+                        }
+                    }
+                    tipo == TipoEvidencia.DOCUMENTO && esPdf -> {
+                        context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
+                            val renderer = PdfRenderer(fd)
+                            val page = renderer.openPage(0)
+                            val bmp = android.graphics.Bitmap.createBitmap(
+                                page.width, page.height, android.graphics.Bitmap.Config.ARGB_8888
+                            )
+                            bmp.eraseColor(android.graphics.Color.WHITE)
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            page.close(); renderer.close()
+                            bmp.asImageBitmap()
+                        }
+                    }
+                    else -> null
+                }
+            } catch (e: Exception) { null }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            thumbnail != null -> Image(
+                bitmap = thumbnail!!,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            tipo == TipoEvidencia.IMAGEN -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                Text("Cargando…", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
+            tipo == TipoEvidencia.AUDIO -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.tertiary)
+                Text(nombre, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+            }
+            else -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(12.dp)
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.secondary)
+                Text(nombre, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
             }
         }
     }

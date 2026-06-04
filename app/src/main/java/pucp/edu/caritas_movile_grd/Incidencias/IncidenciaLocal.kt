@@ -34,5 +34,8 @@ data class IncidenciaLocal(
     val fechaSuceso: Long? = null,
     val distrito: String? = null,
     val direccion: String? = null,
-    val referencia: String? = null
+    val referencia: String? = null,
+    val parroquiaNombre: String? = null,
+    val nivelAfectacion: String? = null,  // Leve / Moderado / Severo
+    val necesidadesObs: String? = null    // Observaciones sobre necesidades
 )

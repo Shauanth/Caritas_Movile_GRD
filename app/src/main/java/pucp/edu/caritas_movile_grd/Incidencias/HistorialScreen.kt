@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Cancel
@@ -409,13 +410,17 @@ fun IncidenciaCard(
     val textColor  = statusTextColor(incidencia.estado)
     val badgeBg    = statusBg(incidencia.estado)
     val categoria  = CATEGORIA_MAP[incidencia.idCatalogoTipo] ?: "Tipo ${incidencia.idCatalogoTipo}"
-    val parroquia  = PARROQUIA_MAP[incidencia.idParroquia] ?: "Parroquia ${incidencia.idParroquia}"
+    val ubicacion  = incidencia.distrito
+        ?: incidencia.parroquiaNombre
+        ?: PARROQUIA_MAP[incidencia.idParroquia]
+        ?: "Sin ubicación"
     val grdCode    = "GRD-2026-${(incidencia.idIncidenciaRemota ?: incidencia.uuidIncidencia.takeLast(4)).toString().padStart(4, '0')}"
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable { onRealizarActividad() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -500,7 +505,7 @@ fun IncidenciaCard(
                     Icon(Icons.Default.LocationOn, contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = Color(0xFF888888))
-                    Text(parroquia, fontSize = 12.sp, color = Color(0xFF555555))
+                    Text(ubicacion, fontSize = 12.sp, color = Color(0xFF555555))
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -515,18 +520,16 @@ fun IncidenciaCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ─ Botones de acción (igual que web) ─
+            // ─ Botones de acción ─
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = onRealizarActividad,
+                    onClick = { /* pendiente */ },
+                    enabled = false,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
@@ -534,10 +537,10 @@ fun IncidenciaCard(
                     onClick = onSubirEvidencia,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color(0xFF444444)
-                    )
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))
                 ) {
+                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Subir Evidencia", fontSize = 12.sp)
                 }
             }

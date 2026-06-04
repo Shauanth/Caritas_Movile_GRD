@@ -17,6 +17,7 @@ import pucp.edu.caritas_movile_grd.Incidencias.RegistrarEventoScreen
 import pucp.edu.caritas_movile_grd.Incidencias.RealizarActividadScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaRepository
+import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaRepository
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
@@ -94,8 +95,9 @@ fun AppNavigation() {
             )
             RegistrarEventoScreen(
                 onBack = { navController.popBackStack() },
-                onSave = { incidencia ->
+                onSave = { incidencia, afectados ->
                     viewModel.guardarIncidencia(incidencia)
+                    afectados.forEach { viewModel.guardarAfectado(it) }
                     navController.popBackStack()
                 }
             )

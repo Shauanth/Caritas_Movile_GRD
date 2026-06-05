@@ -154,32 +154,24 @@ fun ExpandableSection(index: Int, title: String, content: @Composable () -> Unit
 }
 
 @Composable
-fun FormSection(index: Int, title: String, content: @Composable ColumnScope.() -> Unit) {
+fun FormSection(index: Int, title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = CircleShape, 
-                color = MaterialTheme.colorScheme.primary, 
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(32.dp),
                 tonalElevation = 2.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        index.toString(), 
-                        color = MaterialTheme.colorScheme.onPrimary, 
-                        fontWeight = FontWeight.ExtraBold, 
-                        fontSize = 14.sp
-                    )
+                    Text(index.toString(), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
                 }
             }
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                title, 
-                fontWeight = FontWeight.ExtraBold, 
-                fontSize = 14.sp, 
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 1.sp
-            )
+            Column {
+                Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+                if (subtitle != null) Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         content()
     }

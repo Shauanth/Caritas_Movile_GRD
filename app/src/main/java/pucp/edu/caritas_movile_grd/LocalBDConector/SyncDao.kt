@@ -23,8 +23,18 @@ interface SyncDao {
     suspend fun getEvidenciasPendientes(): List<EvidenciaLocal>
 
     // Cuando el backend responde, actualizamos el ID real y el estado a SINCRONIZADO
-    @Query("UPDATE incidencia_local SET idIncidenciaRemota = :idRemoto, estadoSync = 'SINCRONIZADO' WHERE uuidIncidencia = :uuid")
-    suspend fun marcarIncidenciaComoSincronizada(uuid: String, idRemoto: Int)
+    @Query("""
+    UPDATE incidencia_local 
+    SET idIncidenciaRemota = :idRemoto,
+        codigoCasoRemoto = :codigoCaso,
+        estadoSync = 'SINCRONIZADO'
+    WHERE uuidIncidencia = :uuid
+    """)
+    suspend fun marcarIncidenciaComoSincronizada(
+        uuid: String,
+        idRemoto: String,
+        codigoCaso: String?
+    )
 
     @Insert
     suspend fun insertarIncidenciaOffline(incidencia: IncidenciaLocal)

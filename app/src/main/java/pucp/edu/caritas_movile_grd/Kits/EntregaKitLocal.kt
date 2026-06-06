@@ -19,8 +19,10 @@ import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 )
 data class EntregaKitLocal(
     @PrimaryKey val uuidEntrega: String,
-    val idEntregaRemota: Int? = null,
+    val idEntregaRemota: String? = null,
     val uuidAfectado: String,
+    val uuidIncidencia: String? = null,
+    val idIncidenciaRemota: String? = null,    
     val kitEntregado: String,
     val cantidad: Int,
     val fechaEntrega: Long,

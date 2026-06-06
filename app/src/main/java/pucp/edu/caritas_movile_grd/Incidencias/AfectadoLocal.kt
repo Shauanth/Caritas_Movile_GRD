@@ -9,7 +9,7 @@ data class AfectadoLocal(
     @PrimaryKey val uuidAfectado: String,
     val uuidIncidencia: String,
     val idCatalogoDoc: Int,           // Tipo de documento
-    val idAfectadoRemoto: Int? = null,
+    val idAfectadoRemoto: String? = null,
     val documentoIdentidad: String,
     val nombres: String,
     // Datos extendidos

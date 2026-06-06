@@ -959,13 +959,8 @@ private fun UbicacionDetalle(label: String, valor: String) {
 }
 
 private fun incidenciaCode(incidencia: IncidenciaLocal): String {
-    return if (incidencia.idIncidenciaRemota != null) {
-        val year = SimpleDateFormat("yyyy", Locale.getDefault())
-            .format(Date(incidencia.fechaUltimaModificacion))
-        "GRD · $year-${incidencia.idIncidenciaRemota.toString().padStart(4, '0')}"
-    } else {
-        "GRD · ${incidencia.uuidIncidencia.take(8).uppercase()}"
-    }
+    return incidencia.codigoCasoRemoto?.let { "GRD · $it" }
+        ?: "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}"
 }
 
 private fun formatDateLong(timestamp: Long): String {

@@ -21,7 +21,15 @@ class MobileSyncApi(
     suspend fun sincronizarAfectado(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/afectados", payload)
     }
-
+    suspend fun sincronizarEvidencia(payload: JSONObject): JSONObject {
+    return postJson("/api/mobile/sync/evidencias", payload)
+    }
+    suspend fun sincronizarObservacion(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/observaciones", payload)
+    }
+    suspend fun sincronizarSeguimiento(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/seguimientos", payload)
+    }    
     private suspend fun postJson(path: String, payload: JSONObject): JSONObject {
         return withContext(Dispatchers.IO) {
             val url = URL(baseUrl.trimEnd('/') + path)

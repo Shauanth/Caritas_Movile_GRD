@@ -31,9 +31,11 @@ class SyncViewModel(
 
                 val mensaje = buildString {
                     append("Sincronización finalizada: ")
-                    append("${result.incidenciasSincronizadas} incidencias")
-                    append(" y ")
-                    append("${result.afectadosSincronizados} afectados.")
+                    append("${result.incidenciasSincronizadas} incidencia(s), ")
+                    append("${result.afectadosSincronizados} afectado(s), ")
+                    append("${result.evidenciasSincronizadas} evidencia(s), ")
+                    append("${result.observacionesSincronizadas} observación(es) y ")
+                    append("${result.seguimientosSincronizados} seguimiento(s) sincronizado(s).")
                 }
 
                 val errores = if (result.errores.isNotEmpty()) {

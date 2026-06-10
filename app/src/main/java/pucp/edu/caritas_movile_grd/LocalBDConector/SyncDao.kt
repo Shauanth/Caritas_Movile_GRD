@@ -6,6 +6,8 @@ import androidx.room.Query
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
 @Dao
 interface SyncDao {
@@ -65,6 +67,57 @@ interface SyncDao {
         idRemoto: String
     )
 
+    // Cuando el backend responde, marcamos la evidencia como SINCRONIZADA
+    @Query("""
+        UPDATE evidencia_local
+        SET urlS3 = :urlArchivo,
+            estadoSync = 'SINCRONIZADO'
+        WHERE uuidEvidencia = :uuidEvidencia
+    """)
+    suspend fun marcarEvidenciaComoSincronizada(
+        uuidEvidencia: String,
+        urlArchivo: String?
+    )    
+
     @Insert
     suspend fun insertarIncidenciaOffline(incidencia: IncidenciaLocal)
+
+
+    @Query("SELECT * FROM incidencia_local WHERE uuidIncidencia = :uuidIncidencia LIMIT 1")
+    suspend fun getIncidenciaPorUuid(uuidIncidencia: String): IncidenciaLocal?
+
+    @Query("""
+        SELECT * FROM observacion_local
+        WHERE estadoSync IN ('NUEVO', 'EDITADO')
+    """)
+    suspend fun getObservacionesPendientesParaSincronizar(): List<ObservacionLocal>
+
+    @Query("""
+        UPDATE observacion_local
+        SET idObservacionRemota = :idRemoto,
+            estadoSync = 'SINCRONIZADO'
+        WHERE uuidObservacion = :uuidObservacion
+    """)
+    suspend fun marcarObservacionComoSincronizada(
+        uuidObservacion: String,
+        idRemoto: String
+    )   
+
+    @Query("""
+        SELECT * FROM seguimiento_local
+        WHERE estadoSync IN ('NUEVO', 'EDITADO')
+    """)
+    suspend fun getSeguimientosPendientesParaSincronizar(): List<SeguimientoLocal>
+
+    @Query("""
+        UPDATE seguimiento_local
+        SET idSeguimientoRemoto = :idRemoto,
+            estadoSync = 'SINCRONIZADO'
+        WHERE uuidSeguimiento = :uuidSeguimiento
+    """)
+    suspend fun marcarSeguimientoComoSincronizado(
+        uuidSeguimiento: String,
+        idRemoto: String
+    )    
+
 }

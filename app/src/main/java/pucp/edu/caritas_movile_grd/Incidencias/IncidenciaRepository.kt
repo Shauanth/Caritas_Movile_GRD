@@ -1,5 +1,6 @@
 package pucp.edu.caritas_movile_grd.Incidencias
-
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 import kotlinx.coroutines.flow.Flow
 
 class IncidenciaRepository(private val incidenciaDao: IncidenciaDao) {
@@ -16,4 +17,16 @@ class IncidenciaRepository(private val incidenciaDao: IncidenciaDao) {
     suspend fun guardarAfectado(afectado: AfectadoLocal) {
         incidenciaDao.insertAfectado(afectado)
     }
+    suspend fun guardarObservacion(observacion: ObservacionLocal) {
+        incidenciaDao.insertObservacion(observacion)
+    }   
+    suspend fun guardarSeguimiento(seguimiento: SeguimientoLocal) {
+        incidenciaDao.insertSeguimiento(seguimiento)
+    }     
+
+    fun getObservaciones(uuidIncidencia: String): Flow<List<ObservacionLocal>> =
+        incidenciaDao.getObservacionesByIncidencia(uuidIncidencia)
+
+    fun getSeguimientos(uuidIncidencia: String): Flow<List<SeguimientoLocal>> =
+        incidenciaDao.getSeguimientosByIncidencia(uuidIncidencia)    
 }

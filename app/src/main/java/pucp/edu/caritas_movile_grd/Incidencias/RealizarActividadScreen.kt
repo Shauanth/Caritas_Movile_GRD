@@ -3,6 +3,7 @@ package pucp.edu.caritas_movile_grd.Incidencias
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -37,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 import java.text.SimpleDateFormat
 import java.util.*
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
@@ -60,6 +63,7 @@ fun RealizarActividadScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    
     val tabs = listOf("Info", "Familias")
     var showMapSheet by remember { mutableStateOf(false) }
 
@@ -142,8 +146,15 @@ fun RealizarActividadScreen(
 
 @Composable
 private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
-    var showObsDialog by remember { mutableStateOf(false) }
+    val observacionesLocales by viewModel
+    .getObservaciones(incidencia.uuidIncidencia)
+    .collectAsState(initial = emptyList())
 
+    val seguimientosLocales by viewModel
+    .getSeguimientos(incidencia.uuidIncidencia)
+    .collectAsState(initial = emptyList())
+    var showObsDialog by remember { mutableStateOf(false) }
+    var showSeguimientoDialog by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -272,10 +283,16 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
         // ── Observaciones ─────────────────────────────────────────────────────
         item {
             InfoSection(label = "OBSERVACIONES DEL EQUIPO") {
-                val observaciones = incidencia.observacionesCampo
+                val observacionesLegacy = incidencia.observacionesCampo
                     ?.split("\n")
                     ?.filter { it.isNotBlank() }
                     ?: emptyList()
+
+                val observaciones = if (observacionesLocales.isNotEmpty()) {
+                    observacionesLocales.map { it.textoObservacion }
+                } else {
+                    observacionesLegacy
+                }
 
                 if (observaciones.isEmpty()) {
                     Text("Sin observaciones registradas.", fontSize = 13.sp, color = Color.Gray)
@@ -291,13 +308,63 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+
                 TextButton(
                     onClick = { showObsDialog = true },
                     contentPadding = PaddingValues(horizontal = 0.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = GREEN,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Agregar observación", color = GREEN, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+
+        // ── Seguimiento ───────────────────────────────────────────────────────
+        item {
+            InfoSection(label = "SEGUIMIENTO") {
+                Text(
+                    "Registra una actualización de seguimiento sobre la situación del caso.",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+
+                if (seguimientosLocales.isEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Sin seguimientos registrados.",
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        seguimientosLocales.forEach { seguimiento ->
+                            SeguimientoItem(seguimiento)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TextButton(
+                    onClick = { showSeguimientoDialog = true },
+                    contentPadding = PaddingValues(horizontal = 0.dp)
+                ) {
+                    Icon(
+                        Icons.Default.AddTask,
+                        contentDescription = null,
+                        tint = GREEN,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Agregar seguimiento", color = GREEN, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -307,18 +374,62 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
         AgregarObservacionDialog(
             onDismiss = { showObsDialog = false },
             onConfirm = { texto ->
+                val textoLimpio = texto.trim()
+                val ahora = System.currentTimeMillis()
+
                 val actual = incidencia.observacionesCampo ?: ""
-                val nuevo = if (actual.isBlank()) texto else "$actual\n$texto"
+                val nuevo = if (actual.isBlank()) textoLimpio else "$actual\n$textoLimpio"
+
+                // 1. Mantiene la observación visible en la pantalla actual
                 viewModel.guardarIncidencia(
                     incidencia.copy(
                         observacionesCampo = nuevo,
-                        fechaUltimaModificacion = System.currentTimeMillis()
+                        fechaUltimaModificacion = ahora
                     )
                 )
+
+                // 2. Guarda la observación como entidad local pendiente de sincronización
+                viewModel.guardarObservacion(
+                    ObservacionLocal(
+                        uuidObservacion = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        textoObservacion = textoLimpio,
+                        fechaRegistro = ahora.toString(),
+                        estadoSync = EstadoSync.NUEVO
+                    )
+                )
+
                 showObsDialog = false
             }
         )
+
+        
     }
+    if (showSeguimientoDialog) {
+        AgregarSeguimientoDialog(
+            onDismiss = { showSeguimientoDialog = false },
+            onConfirm = { situacion, descripcion, necesidades, recomendaciones ->
+                val ahora = System.currentTimeMillis()
+
+                viewModel.guardarSeguimiento(
+                    SeguimientoLocal(
+                        uuidSeguimiento = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        situacion = situacion.trim().ifBlank { null },
+                        descripcion = descripcion.trim().ifBlank { null },
+                        necesidadesPendientes = necesidades.trim().ifBlank { null },
+                        recomendaciones = recomendaciones.trim().ifBlank { null },
+                        estado = "REGISTRADO",
+                        observaciones = null,
+                        fechaSeguimiento = ahora.toString(),
+                        estadoSync = EstadoSync.NUEVO
+                    )
+                )
+
+                showSeguimientoDialog = false
+            }
+        )
+    }    
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -493,7 +604,59 @@ private fun ObservacionItem(autor: String, texto: String) {
         }
     }
 }
+@Composable
+private fun SeguimientoItem(seguimiento: SeguimientoLocal) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F8F8)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                seguimiento.estado,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = GREEN
+            )
 
+            seguimiento.situacion?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    "Situación: $it",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+
+            seguimiento.descripcion?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    "Descripción: $it",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+
+            seguimiento.necesidadesPendientes?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    "Necesidades pendientes: $it",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+
+            seguimiento.recomendaciones?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    "Recomendaciones: $it",
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+    }
+}
 @Composable
 private fun AfectadoCard(afectado: AfectadoLocal) {
     val esPendiente = afectado.estadoSync == EstadoSync.NUEVO || afectado.estadoSync == EstadoSync.EDITADO
@@ -745,6 +908,103 @@ private fun AgregarObservacionDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN),
                     enabled = texto.isNotBlank() && !grabando
                 ) { Text("Guardar") }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgregarSeguimientoDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (
+        situacion: String,
+        descripcion: String,
+        necesidades: String,
+        recomendaciones: String
+    ) -> Unit
+) {
+    var situacion by remember { mutableStateOf("") }
+    var descripcion by remember { mutableStateOf("") }
+    var necesidades by remember { mutableStateOf("") }
+    var recomendaciones by remember { mutableStateOf("") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Nuevo seguimiento", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+
+            OutlinedTextField(
+                value = situacion,
+                onValueChange = { situacion = it },
+                label = { Text("Situación actual") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            OutlinedTextField(
+                value = descripcion,
+                onValueChange = { descripcion = it },
+                label = { Text("Descripción del seguimiento") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            OutlinedTextField(
+                value = necesidades,
+                onValueChange = { necesidades = it },
+                label = { Text("Necesidades pendientes") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            OutlinedTextField(
+                value = recomendaciones,
+                onValueChange = { recomendaciones = it },
+                label = { Text("Recomendaciones") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancelar")
+                }
+
+                Button(
+                    onClick = {
+                        onConfirm(
+                            situacion,
+                            descripcion,
+                            necesidades,
+                            recomendaciones
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN),
+                    enabled = situacion.isNotBlank() || descripcion.length >= 5
+                ) {
+                    Text("Guardar")
+                }
             }
         }
     }

@@ -31,6 +31,8 @@ import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
 import pucp.edu.caritas_movile_grd.Simulacros.SimulacroViewModel
 import pucp.edu.caritas_movile_grd.LocalBDConector.AppDatabase
 import pucp.edu.caritas_movile_grd.ui.theme.Caritas_Movile_GRDTheme
+import pucp.edu.caritas_movile_grd.LocalBDConector.SyncRepository
+import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +57,7 @@ fun AppNavigation() {
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
+    val syncRepository = SyncRepository(database.syncDao())
 
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
@@ -74,10 +77,14 @@ fun AppNavigation() {
             val simulacroViewModel: SimulacroViewModel = viewModel(
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
             )
+            val syncViewModel: SyncViewModel = viewModel(
+            factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
+            )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,
                 cursoViewModel = cursoViewModel,
                 simulacroViewModel = simulacroViewModel,
+                syncViewModel = syncViewModel,
                 onReportarIncidencia = { navController.navigate("reportar_incidencia") },
                 onRealizarActividad = { uuid -> navController.navigate("realizar_actividad/$uuid") },
                 onSubirEvidencia = { uuid -> navController.navigate("subir_evidencia/$uuid") },

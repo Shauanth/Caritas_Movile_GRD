@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
 class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewModel() {
 
@@ -25,4 +27,19 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
             repository.guardarAfectado(afectado)
         }
     }
+    fun guardarObservacion(observacion: ObservacionLocal) {
+        viewModelScope.launch {
+            repository.guardarObservacion(observacion)
+        }
+    } 
+    fun guardarSeguimiento(seguimiento: SeguimientoLocal) {
+        viewModelScope.launch {
+            repository.guardarSeguimiento(seguimiento)
+        }
+    } 
+    fun getObservaciones(uuidIncidencia: String) =
+        repository.getObservaciones(uuidIncidencia)
+
+    fun getSeguimientos(uuidIncidencia: String) =
+        repository.getSeguimientos(uuidIncidencia)         
 }

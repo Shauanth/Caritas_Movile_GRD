@@ -1,7 +1,8 @@
 package pucp.edu.caritas_movile_grd.Incidencias
-
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
 @Dao
 interface IncidenciaDao {
@@ -22,4 +23,24 @@ interface IncidenciaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectado(afectado: AfectadoLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertObservacion(observacion: ObservacionLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSeguimiento(seguimiento: SeguimientoLocal)
+
+    @Query("""
+        SELECT * FROM observacion_local
+        WHERE uuidIncidencia = :uuidIncidencia
+        ORDER BY fechaRegistro DESC
+    """)
+    fun getObservacionesByIncidencia(uuidIncidencia: String): Flow<List<ObservacionLocal>>
+
+    @Query("""
+        SELECT * FROM seguimiento_local
+        WHERE uuidIncidencia = :uuidIncidencia
+        ORDER BY fechaSeguimiento DESC
+    """)
+    fun getSeguimientosByIncidencia(uuidIncidencia: String): Flow<List<SeguimientoLocal>>    
 }

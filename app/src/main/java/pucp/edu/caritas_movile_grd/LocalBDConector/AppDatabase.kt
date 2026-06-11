@@ -11,6 +11,8 @@ import pucp.edu.caritas_movile_grd.Masters.*
 import pucp.edu.caritas_movile_grd.login.*
 import pucp.edu.caritas_movile_grd.Evidencias.*
 import pucp.edu.caritas_movile_grd.Simulacros.*
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
 @Database(
     entities = [
@@ -24,13 +26,15 @@ import pucp.edu.caritas_movile_grd.Simulacros.*
         IncidenciaLocal::class,
         AfectadoLocal::class,
         EvidenciaLocal::class,
+        ObservacionLocal::class,
+        SeguimientoLocal::class,
         ParroquiaLocal::class,
         CatalogoLocal::class,
         PerfilUsuarioLocal::class,
         AsignacionTerritorio::class,
         SimulacroLocal::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

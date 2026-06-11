@@ -63,7 +63,7 @@ fun EntregaKitScreen(
             OutlinedTextField(
                 value = uuidAfectado,
                 onValueChange = { uuidAfectado = it },
-                label = { Text("ID del Afectado") },
+                label = { Text("DNI") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )

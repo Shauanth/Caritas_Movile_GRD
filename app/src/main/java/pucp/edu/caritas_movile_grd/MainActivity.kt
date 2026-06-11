@@ -57,7 +57,11 @@ fun AppNavigation() {
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
-    val syncRepository = SyncRepository(database.syncDao())
+
+    val syncRepository = SyncRepository(
+        syncDao = database.syncDao(),
+        appContext = context.applicationContext
+    )
 
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
@@ -78,7 +82,7 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
             )
             val syncViewModel: SyncViewModel = viewModel(
-            factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
+                factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
             )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,

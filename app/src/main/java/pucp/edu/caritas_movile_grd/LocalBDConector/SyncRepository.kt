@@ -1,5 +1,9 @@
 package pucp.edu.caritas_movile_grd.LocalBDConector
 
+import android.content.Context
+import android.net.Uri
+import android.util.Base64
+import java.io.File
 import org.json.JSONObject
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
@@ -24,6 +28,7 @@ data class SyncResult(
 
 class SyncRepository(
     private val syncDao: SyncDao,
+    private val appContext: Context,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
 
@@ -278,7 +283,8 @@ class SyncRepository(
             val responseEvidencia = mobileSyncApi.sincronizarEvidencia(
                 evidencia.toMobilePayload(
                     incidencia = incidencia,
-                    idIncidenciaRemota = idIncidenciaRemota
+                    idIncidenciaRemota = idIncidenciaRemota,
+                    context = appContext
                 )
             )
 
@@ -460,7 +466,8 @@ private fun AfectadoLocal.toMobilePayload(
 
 private fun EvidenciaLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
-    idIncidenciaRemota: String
+    idIncidenciaRemota: String,
+    context: Context
 ): JSONObject {
     val nombreSeguro = nombreArchivo
         ?.takeIf { it.isNotBlank() }
@@ -471,6 +478,12 @@ private fun EvidenciaLocal.toMobilePayload(
     val tipoSeguro = contentType
         ?.takeIf { it.isNotBlank() }
         ?: "application/octet-stream"
+
+    val archivoBase64 = if (urlS3.isNullOrBlank()) {
+        leerArchivoBase64(context, rutaLocal)
+    } else {
+        null
+    }
 
     val urlArchivoSeguro = urlS3
         ?.takeIf { it.isNotBlank() }
@@ -487,15 +500,49 @@ private fun EvidenciaLocal.toMobilePayload(
         put("nombreArchivo", nombreSeguro)
         put("contentType", tipoSeguro)
         put("formatoArchivo", tipoSeguro)
-        putNullable("tamanoArchivo", tamanoArchivo)
         putNullable("descripcion", descripcion)
 
-        // MVP: registra la ruta/URI local como metadata.
-        // Luego se puede reemplazar por base64 para subir realmente a S3.
-        put("urlArchivo", urlArchivoSeguro)
+        if (archivoBase64 != null) {
+            put("base64", archivoBase64.base64)
+            put("tamanoArchivo", archivoBase64.tamanoBytes)
+        } else {
+            putNullable("tamanoArchivo", tamanoArchivo)
+            put("urlArchivo", urlArchivoSeguro)
+        }
     }
 }
+private data class ArchivoBase64(
+    val base64: String,
+    val tamanoBytes: Long
+)
 
+private fun leerArchivoBase64(context: Context, rutaLocal: String): ArchivoBase64? {
+    return try {
+        val bytes = if (
+            rutaLocal.startsWith("content://") ||
+            rutaLocal.startsWith("file://")
+        ) {
+            val uri = Uri.parse(rutaLocal)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes()
+            }
+        } else {
+            val file = File(rutaLocal)
+            if (file.exists()) file.readBytes() else null
+        }
+
+        if (bytes == null || bytes.isEmpty()) {
+            null
+        } else {
+            ArchivoBase64(
+                base64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+                tamanoBytes = bytes.size.toLong()
+            )
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
 
 private fun ObservacionLocal.toMobilePayload(
     incidencia: IncidenciaLocal,

@@ -78,13 +78,17 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
             )
             val syncViewModel: SyncViewModel = viewModel(
-            factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
+                factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
+            )
+            val kitViewModel: KitViewModel = viewModel(
+                factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,
                 cursoViewModel = cursoViewModel,
                 simulacroViewModel = simulacroViewModel,
                 syncViewModel = syncViewModel,
+                kitViewModel = kitViewModel,
                 onReportarIncidencia = { navController.navigate("reportar_incidencia") },
                 onRealizarActividad = { uuid -> navController.navigate("realizar_actividad/$uuid") },
                 onSubirEvidencia = { uuid -> navController.navigate("subir_evidencia/$uuid") },

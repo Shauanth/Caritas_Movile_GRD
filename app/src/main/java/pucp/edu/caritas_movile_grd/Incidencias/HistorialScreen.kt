@@ -414,8 +414,8 @@ fun IncidenciaCard(
         ?: incidencia.parroquiaNombre
         ?: PARROQUIA_MAP[incidencia.idParroquia]
         ?: "Sin ubicación"
-    val grdCode    = "GRD-2026-${(incidencia.idIncidenciaRemota ?: incidencia.uuidIncidencia.takeLast(4)).toString().padStart(4, '0')}"
-
+    val grdCode = incidencia.codigoCasoRemoto
+    ?: "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}"
     Card(
         modifier = Modifier
             .fillMaxWidth()

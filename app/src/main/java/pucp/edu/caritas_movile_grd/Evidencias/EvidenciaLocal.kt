@@ -12,5 +12,9 @@ data class EvidenciaLocal(
     val uuidReferencia: String, // Puede ser UUID de Incidencia o de Seguimiento
     val rutaLocal: String,      // URI local: content://media/external/images/...
     val urlS3: String? = null,  // Se llena después de subirla
+    val nombreArchivo: String? = null,
+    val contentType: String? = null,
+    val tamanoArchivo: Long? = null,
+    val descripcion: String? = null,    
     val estadoSync: EstadoSync = EstadoSync.PENDIENTE_SUBIDA
 )

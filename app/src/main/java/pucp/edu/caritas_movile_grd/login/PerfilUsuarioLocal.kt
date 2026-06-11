@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "perfil_usuario_local")
 data class PerfilUsuarioLocal(
     @PrimaryKey val uuidUsuario: String,
-    val idUsuarioRemoto: Int,
+    val idUsuarioRemoto: String? = null,
     val rol: String, // "BRIGADISTA", "ESPECIALISTA"
     val pinAccesoOffline: String, // Hash del PIN para entrar sin internet
     val jwtCacheado: String,

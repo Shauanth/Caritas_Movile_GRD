@@ -33,6 +33,8 @@ import pucp.edu.caritas_movile_grd.LocalBDConector.AppDatabase
 import pucp.edu.caritas_movile_grd.ui.theme.Caritas_Movile_GRDTheme
 import pucp.edu.caritas_movile_grd.LocalBDConector.SyncRepository
 import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
+import pucp.edu.caritas_movile_grd.Masters.MasterRepository
+import pucp.edu.caritas_movile_grd.Masters.MasterViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +59,7 @@ fun AppNavigation() {
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
+    val masterRepository = MasterRepository(database.masterDao())
 
     val syncRepository = SyncRepository(
         syncDao = database.syncDao(),
@@ -104,7 +107,13 @@ fun AppNavigation() {
             val viewModel: IncidenciaViewModel = viewModel(
                 factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
             )
+
+            val masterViewModel: MasterViewModel = viewModel(
+                factory = GenericViewModelFactory { MasterViewModel(masterRepository) }
+            )
+
             RegistrarEventoScreen(
+                masterViewModel = masterViewModel,
                 onBack = { navController.popBackStack() },
                 onSave = { incidencia, afectados ->
                     viewModel.guardarIncidencia(incidencia)

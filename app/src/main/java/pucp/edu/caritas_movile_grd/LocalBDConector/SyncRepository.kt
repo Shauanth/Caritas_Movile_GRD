@@ -472,6 +472,13 @@ private fun IncidenciaLocal.toMobilePayload(): JSONObject {
         put("uuidUsuario", uuidUsuario)
         put("idParroquia", idParroquia)
         put("idCatalogoTipo", idCatalogoTipo)
+        val tipoEventoSeguro = tipoEventoNombre?.takeIf { it.isNotBlank() }
+
+        if (tipoEventoSeguro != null) {
+            put("tipoEvento", tipoEventoSeguro)
+            put("categoria", tipoEventoSeguro)
+            put("categoriaNombre", tipoEventoSeguro)
+        }        
         put("descripcion", descripcion)
         put("nombre", nombre)
         put("numAfectados", numAfectados)

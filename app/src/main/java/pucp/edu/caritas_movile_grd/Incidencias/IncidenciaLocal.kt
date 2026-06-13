@@ -15,6 +15,7 @@ data class IncidenciaLocal(
     val uuidUsuario: String,
     val idParroquia: Int,
     val idCatalogoTipo: Int,
+    val tipoEventoNombre: String? = null,
     val descripcion: String,
     val nombre: String = "",
     val numAfectados: Int = 0,

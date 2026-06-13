@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 
 class MasterViewModel(private val repository: MasterRepository) : ViewModel() {
 
@@ -15,4 +17,10 @@ class MasterViewModel(private val repository: MasterRepository) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun getCatalogosPorCategoria(categoria: String) = repository.getCatalogosPorCategoria(categoria)
+
+    fun refrescarCatalogosDesdeBackend() {
+        viewModelScope.launch {
+            repository.refrescarCatalogosDesdeBackend()
+        }
+    }    
 }

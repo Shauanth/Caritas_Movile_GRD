@@ -19,4 +19,13 @@ interface MasterDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCatalogos(catalogos: List<CatalogoLocal>)
+
+    @Query("DELETE FROM catalogo_local")
+    suspend fun clearCatalogos()
+
+    @Transaction
+    suspend fun reemplazarCatalogos(catalogos: List<CatalogoLocal>) {
+        clearCatalogos()
+        insertCatalogos(catalogos)
+    }    
 }

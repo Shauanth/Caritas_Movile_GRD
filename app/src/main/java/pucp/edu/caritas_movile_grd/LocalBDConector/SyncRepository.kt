@@ -16,6 +16,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 
 data class SyncResult(
     val incidenciasSincronizadas: Int,
@@ -23,6 +24,7 @@ data class SyncResult(
     val evidenciasSincronizadas: Int,
     val observacionesSincronizadas: Int,
     val seguimientosSincronizados: Int,
+    val entregasSincronizadas: Int,
     val errores: List<String>
 )
 
@@ -38,6 +40,7 @@ class SyncRepository(
         var evidenciasSincronizadas = 0
         var observacionesSincronizadas = 0
         var seguimientosSincronizados = 0
+        var entregasSincronizadas = 0
         val errores = mutableListOf<String>()
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
@@ -225,13 +228,53 @@ class SyncRepository(
                 seguimientosSincronizados++
             }
         }
+        // 6. Sexta pasada: sincronizar entregas de kits pendientes
+        val entregasPendientes = syncDao.getEntregasPendientesParaSincronizar()
 
+        for (entrega in entregasPendientes) {
+            val uuidIncidencia = entrega.uuidIncidencia
+
+            if (uuidIncidencia.isNullOrBlank()) {
+                errores.add("La entrega ${entrega.uuidEntrega} no tiene uuidIncidencia.")
+                continue
+            }
+
+            val incidencia = syncDao.getIncidenciaPorUuid(uuidIncidencia)
+
+            if (incidencia == null) {
+                errores.add("No se encontró la incidencia local de la entrega ${entrega.uuidEntrega}.")
+                continue
+            }
+
+            val idIncidenciaRemota = entrega.idIncidenciaRemota
+                ?: incidencia.idIncidenciaRemota
+
+            if (idIncidenciaRemota.isNullOrBlank()) {
+                errores.add(
+                    "La incidencia ${incidencia.uuidIncidencia} aún no tiene id remoto. " +
+                            "No se puede sincronizar la entrega ${entrega.uuidEntrega}."
+                )
+                continue
+            }
+
+            val sincronizada = sincronizarEntregaPendiente(
+                entrega = entrega,
+                incidencia = incidencia,
+                idIncidenciaRemota = idIncidenciaRemota,
+                errores = errores
+            )
+
+            if (sincronizada) {
+                entregasSincronizadas++
+            }
+        }
         return SyncResult(
             incidenciasSincronizadas = incidenciasSincronizadas,
             afectadosSincronizados = afectadosSincronizados,
             evidenciasSincronizadas = evidenciasSincronizadas,
             observacionesSincronizadas = observacionesSincronizadas,
             seguimientosSincronizados = seguimientosSincronizados,
+            entregasSincronizadas = entregasSincronizadas,
             errores = errores
         )
     }
@@ -384,7 +427,43 @@ class SyncRepository(
             errores.add("Error al sincronizar seguimiento ${seguimiento.uuidSeguimiento}: ${ex.message}")
             false
         }
-    }      
+    }  
+    private suspend fun sincronizarEntregaPendiente(
+        entrega: EntregaKitLocal,
+        incidencia: IncidenciaLocal,
+        idIncidenciaRemota: String,
+        errores: MutableList<String>
+    ): Boolean {
+        return try {
+            val responseEntrega = mobileSyncApi.sincronizarEntrega(
+                entrega.toMobilePayload(
+                    incidencia = incidencia,
+                    idIncidenciaRemota = idIncidenciaRemota
+                )
+            )
+
+            val idEntregaRemota = responseEntrega.optString(
+                "idEntregaRemota",
+                responseEntrega.optString("idServidor", "")
+            )
+
+            if (idEntregaRemota.isBlank()) {
+                errores.add("La entrega ${entrega.uuidEntrega} no devolvió id remoto.")
+                false
+            } else {
+                syncDao.marcarEntregaComoSincronizada(
+                    uuidEntrega = entrega.uuidEntrega,
+                    idRemoto = idEntregaRemota
+                )
+
+                true
+            }
+        } catch (ex: Exception) {
+            errores.add("Error al sincronizar entrega ${entrega.uuidEntrega}: ${ex.message}")
+            false
+        }
+    }    
+
 }
 
 private fun IncidenciaLocal.toMobilePayload(): JSONObject {
@@ -511,6 +590,30 @@ private fun EvidenciaLocal.toMobilePayload(
         }
     }
 }
+
+private fun EntregaKitLocal.toMobilePayload(
+    incidencia: IncidenciaLocal,
+    idIncidenciaRemota: String
+): JSONObject {
+    return JSONObject().apply {
+        put("uuidEntrega", uuidEntrega)
+
+        put("uuidIncidencia", uuidIncidencia ?: incidencia.uuidIncidencia)
+        put("idIncidenciaRemota", idIncidenciaRemota)
+
+        put("uuidAfectadoMovil", uuidAfectado)
+        put("uuidPersonaAfectada", uuidAfectado)
+        put("uuidPersonaAfectadaMovil", uuidAfectado)
+
+        put("tipoAyuda", kitEntregado)
+        put("descripcionAyuda", "Entrega móvil de $kitEntregado")
+        put("cantidadEntregada", cantidad)
+        put("fechaEntrega", normalizarFechaRegistro(fechaEntrega))
+
+        put("idUsuarioResponsableGRD", MobileApiConfig.USUARIO_GRD_ID)
+    }
+}
+
 private data class ArchivoBase64(
     val base64: String,
     val tamanoBytes: Long
@@ -604,6 +707,11 @@ private fun normalizarFechaRegistro(fechaRegistro: String): String {
     }
 
     return fechaRegistro
+}
+private fun normalizarFechaRegistro(fechaRegistro: Long): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+    formatter.timeZone = TimeZone.getTimeZone("UTC")
+    return formatter.format(Date(fechaRegistro))
 }
 private fun JSONObject.putNullable(key: String, value: Any?) {
     if (value == null) {

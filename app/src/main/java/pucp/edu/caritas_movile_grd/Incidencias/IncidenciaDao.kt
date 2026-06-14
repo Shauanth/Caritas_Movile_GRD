@@ -37,7 +37,9 @@ interface IncidenciaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
-
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAfectados(afectados: List<AfectadoLocal>)
     @Query("""
         SELECT * FROM observacion_local
         WHERE uuidIncidencia = :uuidIncidencia

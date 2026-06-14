@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import android.util.Log
 
 class MobileSyncException(
     message: String,
@@ -45,8 +46,8 @@ class MobileSyncApi(
 
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 30_000
+                connectTimeout = 20_000
+                readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
             }
 
@@ -86,14 +87,16 @@ class MobileSyncApi(
 
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 30_000
+                connectTimeout = 20_000
+                readTimeout = 90_000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
             }
 
             try {
+                Log.d("MobileSyncApi", "POST $path payload=$payload")
+
                 connection.outputStream.use { output ->
                     output.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
@@ -105,6 +108,9 @@ class MobileSyncApi(
                 } else {
                     connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 }
+
+                Log.d("MobileSyncApi", "POST $path status=$statusCode")
+                Log.d("MobileSyncApi", "POST $path response=$responseBody")
 
                 val responseJson = if (responseBody.isBlank()) {
                     JSONObject()

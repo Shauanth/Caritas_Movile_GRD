@@ -8,6 +8,7 @@ import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 
 @Dao
 interface SyncDao {
@@ -119,5 +120,20 @@ interface SyncDao {
         uuidSeguimiento: String,
         idRemoto: String
     )    
+    @Query("""
+        SELECT * FROM entrega_kit_local
+        WHERE estadoSync IN ('NUEVO', 'EDITADO')
+    """)
+    suspend fun getEntregasPendientesParaSincronizar(): List<EntregaKitLocal>
 
+    @Query("""
+        UPDATE entrega_kit_local
+        SET idEntregaRemota = :idRemoto,
+            estadoSync = 'SINCRONIZADO'
+        WHERE uuidEntrega = :uuidEntrega
+    """)
+    suspend fun marcarEntregaComoSincronizada(
+        uuidEntrega: String,
+        idRemoto: String
+    )
 }

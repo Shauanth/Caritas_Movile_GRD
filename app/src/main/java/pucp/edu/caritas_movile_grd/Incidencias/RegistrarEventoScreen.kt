@@ -19,6 +19,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
+import pucp.edu.caritas_movile_grd.Masters.MasterViewModel
+import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.util.*
 
 // ── Catálogos ────────────────────────────────────────────────────────────────
@@ -126,9 +128,10 @@ private fun calcularResumen(personas: List<PendingPersona>, familias: List<Pendi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegistrarEventoScreen(
+    masterViewModel: MasterViewModel,
     onBack: () -> Unit,
     onSave: (IncidenciaLocal, List<AfectadoLocal>) -> Unit
-) {
+){
     // Datos generales
     var dniReporte       by remember { mutableStateOf("") }
     var nombreReporte    by remember { mutableStateOf("") }
@@ -139,7 +142,40 @@ fun RegistrarEventoScreen(
     var fechaMillis      by remember { mutableStateOf<Long?>(null) }
     var horaHora         by remember { mutableIntStateOf(-1) }
     var horaMinuto       by remember { mutableIntStateOf(0) }
-    var selectedCatId    by remember { mutableIntStateOf(1) }
+
+    val catalogos by masterViewModel.catalogos.collectAsState()
+
+    LaunchedEffect(Unit) {
+        masterViewModel.refrescarCatalogosDesdeBackend()
+    }
+
+    val categoriasEvento = remember(catalogos) {
+        val desdeBackend = catalogos
+            .filter { it.categoria == "Tipos de Evento" }
+            .sortedBy { it.valor }
+
+        if (desdeBackend.isNotEmpty()) {
+            desdeBackend.map { it.idCatalogo to it.valor }
+        } else {
+            CATEGORIAS_EVENTO.toList()
+        }
+    }
+
+    var selectedCatId by remember { mutableIntStateOf(categoriasEvento.firstOrNull()?.first ?: 1) }
+
+    LaunchedEffect(categoriasEvento) {
+        if (categoriasEvento.none { it.first == selectedCatId }) {
+            selectedCatId = categoriasEvento.firstOrNull()?.first ?: 1
+        }
+    }    
+
+    val tipoEventoSeleccionado = remember(categoriasEvento, selectedCatId) {
+        categoriasEvento
+            .firstOrNull { it.first == selectedCatId }
+            ?.second
+            ?: "Otros"
+    }
+
     var distrito         by remember { mutableStateOf("") }
     var direccion        by remember { mutableStateOf("") }
     var referencia       by remember { mutableStateOf("") }
@@ -300,14 +336,15 @@ fun RegistrarEventoScreen(
                             val necesidadesStr = buildList {
                                 addAll(necesidades.filter { it != "Otros" })
                                 if (necesidades.contains("Otros") && necesidadOtra.isNotBlank()) add(necesidadOtra.trim())
-                            }.joinToString(", ")
+                            }.joinToString(", ")                         
                             val incidencia = IncidenciaLocal(
                                 uuidIncidencia          = uuidNuevo,
-                                uuidUsuario             = "brigadista",
+                                uuidUsuario = MobileApiConfig.MOBILE_SYNC_USER_ID,
                                 idParroquia             = 1,
                                 idCatalogoTipo          = selectedCatId,
+                                tipoEventoNombre        = tipoEventoSeleccionado,
                                 descripcion             = descripcion.trim(),
-                                nombre                  = "Evento-${distrito}",
+                                nombre                  = "$tipoEventoSeleccionado - $distrito",
                                 numAfectados            = pendingPersonas.size,
                                 responsable             = "Brigadista",
                                 estado                  = "ABIERTO",
@@ -378,7 +415,12 @@ fun RegistrarEventoScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text("Alias del evento (autogenerado)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("Evento-${distrito.ifBlank { "…" }}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(
+                            "$tipoEventoSeleccionado - ${distrito.ifBlank { "…" }}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 }
             }
@@ -482,7 +524,7 @@ fun RegistrarEventoScreen(
                 Text("Categoría del evento *", fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                 FlowRow(mainAxisSpacing = 8.dp, crossAxisSpacing = 8.dp) {
-                    CATEGORIAS_EVENTO.forEach { (id, nombre) ->
+                    categoriasEvento.forEach { (id, nombre) ->
                         FilterChip(
                             selected = selectedCatId == id,
                             onClick = { selectedCatId = id },

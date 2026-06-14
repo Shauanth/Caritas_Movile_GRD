@@ -29,6 +29,56 @@ class MobileSyncApi(
     }
     suspend fun sincronizarSeguimiento(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/seguimientos", payload)
+    } 
+    suspend fun sincronizarEntrega(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/entregas", payload)
+    }   
+    suspend fun obtenerCatalogos(): JSONObject {
+        return getJson("/api/mobile/catalogos")
+    }   
+    suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
+        return getJson("/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD")
+    }     
+    private suspend fun getJson(path: String): JSONObject {
+        return withContext(Dispatchers.IO) {
+            val url = URL(baseUrl.trimEnd('/') + path)
+
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("Accept", "application/json")
+            }
+
+            try {
+                val statusCode = connection.responseCode
+
+                val responseBody = if (statusCode in 200..299) {
+                    connection.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                }
+
+                val responseJson = if (responseBody.isBlank()) {
+                    JSONObject()
+                } else {
+                    JSONObject(responseBody)
+                }
+
+                if (statusCode !in 200..299) {
+                    val message = responseJson.optString(
+                        "message",
+                        "Error HTTP $statusCode al consultar datos móviles."
+                    )
+
+                    throw MobileSyncException(message, statusCode)
+                }
+
+                responseJson
+            } finally {
+                connection.disconnect()
+            }
+        }
     }    
     private suspend fun postJson(path: String, payload: JSONObject): JSONObject {
         return withContext(Dispatchers.IO) {

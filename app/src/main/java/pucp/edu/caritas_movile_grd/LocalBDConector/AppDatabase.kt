@@ -34,7 +34,7 @@ import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
         AsignacionTerritorio::class,
         SimulacroLocal::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

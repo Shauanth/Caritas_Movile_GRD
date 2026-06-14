@@ -47,5 +47,24 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
         viewModelScope.launch {
             repository.refrescarIncidenciasAsignadas()
         }
-    }            
+    }   
+    fun finalizarRecopilacion(
+        incidencia: IncidenciaLocal,
+        onResult: (Boolean, String?) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            try {
+                val ok = repository.finalizarRecopilacion(incidencia)
+
+                if (ok) {
+                    onResult(true, null)
+                } else {
+                    onResult(false, "No se pudo finalizar la recopilación.")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.message ?: "Error al finalizar la recopilación.")
+            }
+        }
+    }    
+
 }

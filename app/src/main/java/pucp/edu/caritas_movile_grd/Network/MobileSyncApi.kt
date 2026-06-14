@@ -37,6 +37,9 @@ class MobileSyncApi(
     suspend fun obtenerCatalogos(): JSONObject {
         return getJson("/api/mobile/catalogos")
     }   
+    suspend fun finalizarRecopilacion(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/finalizar-recopilacion", payload)
+    }    
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
         return getJson("/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD")
     }     

@@ -132,7 +132,38 @@ class IncidenciaRepository(
         } catch (e: Exception) {
             Log.e(TAG_ASIGNADAS, "Error refrescando incidencias asignadas", e)
         }
-    }     
+    }
+
+    suspend fun finalizarRecopilacion(
+        incidencia: IncidenciaLocal,
+        observacionCierre: String = "Recopilación finalizada desde móvil"
+    ): Boolean {
+        val payload = JSONObject().apply {
+            put("uuidCierre", "cierre-${incidencia.uuidIncidencia}")
+            put("uuidIncidencia", incidencia.uuidIncidencia)
+            putNullable("idIncidenciaRemota", incidencia.idIncidenciaRemota)
+            putNullable("codigoCaso", incidencia.codigoCasoRemoto)
+            put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+            put("observacionCierre", observacionCierre)
+        }
+
+        val response = mobileSyncApi.finalizarRecopilacion(payload)
+
+        if (!response.optBoolean("ok", false)) {
+            return false
+        }
+
+        incidenciaDao.updateIncidencia(
+            incidencia.copy(
+                estado = response.optString("estadoActual", "DATA RECOPILADA"),
+                estadoSync = EstadoSync.SINCRONIZADO,
+                fechaUltimaModificacion = System.currentTimeMillis()
+            )
+        )
+
+        return true
+    }    
+
 
 }
 private fun JSONObject.toIncidenciaLocalAsignada(idUsuarioGRD: String): IncidenciaLocal {
@@ -357,4 +388,12 @@ private fun calcularEdadDesdeFechaNacimiento(fechaNacimiento: String?): Int? {
     }
 
     return edad.takeIf { it >= 0 }
+}
+
+private fun JSONObject.putNullable(name: String, value: String?) {
+    if (value.isNullOrBlank()) {
+        put(name, JSONObject.NULL)
+    } else {
+        put(name, value)
+    }
 }

@@ -11,6 +11,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.Calendar
+import java.util.Date
 import kotlin.math.abs
 import android.util.Log
 private const val TAG_ASIGNADAS = "IncidenciasAsignadas"
@@ -65,6 +66,7 @@ class IncidenciaRepository(
 
             val incidencias = mutableListOf<IncidenciaLocal>()
             val afectados = mutableListOf<AfectadoLocal>()
+            val observaciones = mutableListOf<ObservacionLocal>()
 
             for (i in 0 until items.length()) {
                 val wrapper = items.optJSONObject(i)
@@ -93,7 +95,16 @@ class IncidenciaRepository(
                 )
 
                 afectados.addAll(afectadosLocales)
+                val observacionesLocales = incidenciaJson.toObservacionesLocalesAsignadas(
+                    uuidIncidenciaLocal = incidenciaLocal.uuidIncidencia
+                )
 
+                Log.d(
+                    TAG_ASIGNADAS,
+                    "Mapeadas observaciones para ${incidenciaLocal.codigoCasoRemoto}: ${observacionesLocales.size}"
+                )
+
+                observaciones.addAll(observacionesLocales)
                 Log.d(
                     TAG_ASIGNADAS,
                     "Mapeada incidencia: uuid=${incidenciaLocal.uuidIncidencia}, codigo=${incidenciaLocal.codigoCasoRemoto}, titulo=${incidenciaLocal.nombre}"
@@ -113,6 +124,11 @@ class IncidenciaRepository(
                 incidenciaDao.insertAfectados(afectados)
                 Log.d(TAG_ASIGNADAS, "Afectados insertados en Room=${afectados.size}")
             }
+            if (observaciones.isNotEmpty()) {
+                incidenciaDao.insertObservaciones(observaciones)
+                Log.d(TAG_ASIGNADAS, "Observaciones insertadas en Room=${observaciones.size}")
+            }
+
         } catch (e: Exception) {
             Log.e(TAG_ASIGNADAS, "Error refrescando incidencias asignadas", e)
         }
@@ -261,6 +277,55 @@ private fun JSONObject.toAfectadosLocalesAsignados(
 
     return afectados
 }
+
+private fun JSONObject.toObservacionesLocalesAsignadas(
+    uuidIncidenciaLocal: String
+): List<ObservacionLocal> {
+    val items = optJSONArray("observaciones") ?: return emptyList()
+    val observaciones = mutableListOf<ObservacionLocal>()
+
+    for (i in 0 until items.length()) {
+        val item = items.optJSONObject(i) ?: continue
+
+        val idRemoto = item.optStringOrNull("idObservacionGRD")
+            ?: item.optStringOrNull("idObservacionRemota")
+
+        val uuidObservacion = item.optStringOrNull("uuidMovil")
+            ?: item.optStringOrNull("uuidObservacion")
+            ?: "remote-${idRemoto ?: "$uuidIncidenciaLocal-$i"}"
+
+        val texto = item.optStringOrNull("textoObservacion")
+            ?: item.optStringOrNull("observacion")
+            ?: item.optStringOrNull("descripcion")
+            ?: item.optStringOrNull("comentario")
+            ?: continue
+
+        val fechaRegistro = item.optStringOrNull("fechaRegistro")
+            ?: item.optStringOrNull("fechaSincronizacion")
+            ?: nowIsoUtc()
+
+        observaciones.add(
+            ObservacionLocal(
+                uuidObservacion = uuidObservacion,
+                uuidIncidencia = uuidIncidenciaLocal,
+                textoObservacion = texto,
+                fechaRegistro = fechaRegistro,
+                estadoSync = EstadoSync.SINCRONIZADO,
+                idObservacionRemota = idRemoto
+            )
+        )
+    }
+
+    return observaciones
+}
+
+private fun nowIsoUtc(): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+    formatter.timeZone = TimeZone.getTimeZone("UTC")
+    return formatter.format(Date())
+}
+
+
 
 private fun separarApellidos(apellidos: String?): Pair<String?, String?> {
     val partes = apellidos

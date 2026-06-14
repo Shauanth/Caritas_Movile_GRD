@@ -30,6 +30,9 @@ interface IncidenciaDao {
     suspend fun insertObservacion(observacion: ObservacionLocal)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertObservaciones(observaciones: List<ObservacionLocal>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSeguimiento(seguimiento: SeguimientoLocal)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -37,7 +40,7 @@ interface IncidenciaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectados(afectados: List<AfectadoLocal>)
     @Query("""

@@ -41,5 +41,11 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
         repository.getObservaciones(uuidIncidencia)
 
     fun getSeguimientos(uuidIncidencia: String) =
-        repository.getSeguimientos(uuidIncidencia)         
+        repository.getSeguimientos(uuidIncidencia)    
+         
+    fun refrescarIncidenciasAsignadas() {
+        viewModelScope.launch {
+            repository.refrescarIncidenciasAsignadas()
+        }
+    }            
 }

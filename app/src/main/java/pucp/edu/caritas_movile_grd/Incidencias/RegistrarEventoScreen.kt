@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import pucp.edu.caritas_movile_grd.Masters.MasterViewModel
+import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.util.*
 
 // ── Catálogos ────────────────────────────────────────────────────────────────
@@ -338,7 +339,7 @@ fun RegistrarEventoScreen(
                             }.joinToString(", ")                         
                             val incidencia = IncidenciaLocal(
                                 uuidIncidencia          = uuidNuevo,
-                                uuidUsuario             = "brigadista",
+                                uuidUsuario = MobileApiConfig.MOBILE_SYNC_USER_ID,
                                 idParroquia             = 1,
                                 idCatalogoTipo          = selectedCatId,
                                 tipoEventoNombre        = tipoEventoSeleccionado,

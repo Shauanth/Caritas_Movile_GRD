@@ -617,7 +617,7 @@ private fun EntregaKitLocal.toMobilePayload(
         put("cantidadEntregada", cantidad)
         put("fechaEntrega", normalizarFechaRegistro(fechaEntrega))
 
-        put("idUsuarioResponsableGRD", MobileApiConfig.USUARIO_GRD_ID)
+        put("idUsuarioResponsableGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
     }
 }
 
@@ -669,9 +669,9 @@ private fun ObservacionLocal.toMobilePayload(
 
         // Usuario que registra la observación.
         // Se envían varios alias para ser compatible con el endpoint backend.
-        put("idUsuarioGRD", MobileApiConfig.USUARIO_GRD_ID)
-        put("idUsuarioRemoto", MobileApiConfig.USUARIO_GRD_ID)
-        put("idUsuarioCargaGRD", MobileApiConfig.USUARIO_GRD_ID)
+        put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioRemoto", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioCargaGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
 
         put("textoObservacion", textoObservacion)
         put("observacion", textoObservacion)
@@ -692,7 +692,7 @@ private fun SeguimientoLocal.toMobilePayload(
         put("idIncidenciaRemota", idIncidenciaRemota)
         putNullable("codigoCaso", incidencia.codigoCasoRemoto)
 
-        put("idUsuarioGRD", MobileApiConfig.USUARIO_GRD_ID)
+        put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
 
         put("fechaSeguimiento", normalizarFechaRegistro(fechaSeguimiento))
         putNullable("situacion", situacion)

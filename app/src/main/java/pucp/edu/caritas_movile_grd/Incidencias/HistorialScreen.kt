@@ -68,6 +68,13 @@ private val CATEGORIAS_FILTER = listOf(
 fun formatDate(timestamp: Long): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
 
+
+private fun categoriaIncidencia(incidencia: IncidenciaLocal): String {
+    return incidencia.tipoEventoNombre
+        ?.takeIf { it.isNotBlank() }
+        ?: CATEGORIA_MAP[incidencia.idCatalogoTipo]
+        ?: "Tipo ${incidencia.idCatalogoTipo}"
+}
 // ── Color helpers ────────────────────────────────────────────────────────────
 
 /** Color de fondo de la tarjeta de estado */
@@ -230,6 +237,9 @@ fun GRDScreen(
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
 
+    LaunchedEffect(Unit) {
+        viewModel.refrescarIncidenciasAsignadas()
+    }
     var searchQuery       by remember { mutableStateOf("") }
     var statusFilter      by remember { mutableStateOf<String?>(null) }
     var categoriaExpanded by remember { mutableStateOf(false) }
@@ -409,7 +419,7 @@ fun IncidenciaCard(
 ) {
     val textColor  = statusTextColor(incidencia.estado)
     val badgeBg    = statusBg(incidencia.estado)
-    val categoria  = CATEGORIA_MAP[incidencia.idCatalogoTipo] ?: "Tipo ${incidencia.idCatalogoTipo}"
+    val categoria = categoriaIncidencia(incidencia)
     val ubicacion  = incidencia.distrito
         ?: incidencia.parroquiaNombre
         ?: PARROQUIA_MAP[incidencia.idParroquia]

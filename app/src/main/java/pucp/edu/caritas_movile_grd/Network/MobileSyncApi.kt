@@ -37,7 +37,9 @@ class MobileSyncApi(
         return getJson("/api/mobile/catalogos")
     }   
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
-        return getJson("/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD")
+        val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
+                   else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"
+        return getJson(path)
     }     
     private suspend fun getJson(path: String): JSONObject {
         return withContext(Dispatchers.IO) {

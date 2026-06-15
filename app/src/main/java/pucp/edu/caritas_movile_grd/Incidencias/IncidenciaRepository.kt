@@ -1,6 +1,7 @@
 package pucp.edu.caritas_movile_grd.Incidencias
 
 import kotlinx.coroutines.flow.Flow
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import org.json.JSONObject
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
@@ -40,7 +41,14 @@ class IncidenciaRepository(
         incidenciaDao.getObservacionesByIncidencia(uuidIncidencia)
 
     fun getSeguimientos(uuidIncidencia: String): Flow<List<SeguimientoLocal>> =
-        incidenciaDao.getSeguimientosByIncidencia(uuidIncidencia)   
+        incidenciaDao.getSeguimientosByIncidencia(uuidIncidencia)
+
+    fun getEvidencias(uuidIncidencia: String): Flow<List<EvidenciaLocal>> =
+        incidenciaDao.getEvidenciasByIncidencia(uuidIncidencia)
+
+    suspend fun guardarEvidencia(evidencia: EvidenciaLocal) {
+        incidenciaDao.insertEvidencia(evidencia)
+    }   
 
     suspend fun refrescarIncidenciasAsignadas(
         idUsuarioGRD: String = MobileApiConfig.MOBILE_SYNC_USER_ID
@@ -79,7 +87,12 @@ class IncidenciaRepository(
                     continue
                 }
 
-                val incidenciaLocal = incidenciaJson.toIncidenciaLocalAsignada(idUsuarioGRD)
+                val asignacionJson = wrapper.optJSONObject("asignacion")
+                val incidenciaLocal = incidenciaJson.toIncidenciaLocalAsignada(
+                    idUsuarioGRD,
+                    uuidMovilAsignacion = asignacionJson?.optString("uuidMovil")
+                        ?.takeIf { it.isNotBlank() && it != "null" }
+                )
 
                 Log.d(
                     TAG_ASIGNADAS,
@@ -101,7 +114,10 @@ class IncidenciaRepository(
     }     
 
 }
-private fun JSONObject.toIncidenciaLocalAsignada(idUsuarioGRD: String): IncidenciaLocal {
+private fun JSONObject.toIncidenciaLocalAsignada(
+    idUsuarioGRD: String,
+    uuidMovilAsignacion: String? = null
+): IncidenciaLocal {
     val idRemoto = optStringOrNull("idIncidencia")
     val codigoCaso = optStringOrNull("codigoCaso")
     val tipoEvento = optStringOrNull("tipoEvento") ?: "Evento asignado"
@@ -114,7 +130,8 @@ private fun JSONObject.toIncidenciaLocalAsignada(idUsuarioGRD: String): Incidenc
     }
 
     return IncidenciaLocal(
-        uuidIncidencia = optStringOrNull("uuidMovil")
+        uuidIncidencia = uuidMovilAsignacion
+            ?: optStringOrNull("uuidMovil")
             ?: "remote-${idRemoto ?: codigoCaso ?: System.currentTimeMillis()}",
         idIncidenciaRemota = idRemoto,
         uuidUsuario = idUsuarioGRD,

@@ -125,6 +125,19 @@ fun LoginScreen(
             ) {
                 Text("INGRESAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TextButton(
+                onClick = { onLoginSuccess("brigadista") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Ingresar como Brigadista (demo)",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+            }
         }
     }
 }

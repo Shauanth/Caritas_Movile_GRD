@@ -63,9 +63,12 @@ fun RealizarActividadScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    
-    val tabs = listOf("Info", "Familias")
+
+    val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias")
     var showMapSheet by remember { mutableStateOf(false) }
+    var showFinalizarDialog by remember { mutableStateOf(false) }
+
+    val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO"
 
     Scaffold(
         topBar = {
@@ -91,6 +94,11 @@ fun RealizarActividadScreen(
                     }
                 },
                 actions = {
+                    if (puedeFinalizarRecopilacion) {
+                        TextButton(onClick = { showFinalizarDialog = true }) {
+                            Text("Finalizar", color = GREEN, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     IconButton(onClick = { showMapSheet = true }) {
                         Icon(
                             Icons.Default.MyLocation,
@@ -130,6 +138,8 @@ fun RealizarActividadScreen(
             when (selectedTab) {
                 0 -> InfoTab(incidencia, viewModel)
                 1 -> FamiliasTab(incidencia, afectados, viewModel)
+                2 -> ObservacionesTab(incidencia, viewModel)
+                3 -> EvidenciasTab(incidencia, viewModel)
             }
         }
     }
@@ -137,6 +147,47 @@ fun RealizarActividadScreen(
     // ── Mapa de ubicación ─────────────────────────────────────────────────────
     if (showMapSheet) {
         UbicacionMapSheet(incidencia = incidencia, onDismiss = { showMapSheet = false })
+    }
+
+    // ── Finalizar Recopilación ────────────────────────────────────────────────
+    if (showFinalizarDialog) {
+        AlertDialog(
+            onDismissRequest = { showFinalizarDialog = false },
+            icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = GREEN, modifier = Modifier.size(32.dp)) },
+            title = { Text("Finalizar Recopilación", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("¿Confirmas que completaste la recopilación de datos?")
+                    Text(
+                        "El estado cambiará a DATA RECOPILADA y se sincronizará al presionar Sincronizar.",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.guardarIncidencia(
+                            incidencia.copy(
+                                estado = "DATA RECOPILADA",
+                                estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.EDITADO,
+                                fechaUltimaModificacion = System.currentTimeMillis()
+                            )
+                        )
+                        showFinalizarDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFinalizarDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 
@@ -1215,6 +1266,236 @@ private fun UbicacionDetalle(label: String, valor: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1A1A1A))
         Text(valor, fontSize = 13.sp, color = Color(0xFF555555), lineHeight = 18.sp)
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAB OBSERVACIONES
+// ════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ObservacionesTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
+    val observaciones by viewModel.getObservaciones(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+    var showDialog by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
+        if (observaciones.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Notes, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Text("Sin observaciones registradas", color = Color.Gray, fontSize = 14.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(observaciones) { obs ->
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = GREEN)
+                                Text(incidencia.responsable, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = GREEN)
+                                Spacer(modifier = Modifier.weight(1f))
+                                Surface(shape = RoundedCornerShape(4.dp), color = if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)) {
+                                    Text(
+                                        if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) "Sincronizado" else "Pendiente",
+                                        fontSize = 10.sp,
+                                        color = if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(obs.textoObservacion, fontSize = 14.sp, lineHeight = 20.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = GREEN,
+            contentColor = Color.White
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Agregar observación")
+        }
+    }
+
+    if (showDialog) {
+        AgregarObservacionDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = { texto ->
+                val textoLimpio = texto.trim()
+                val ahora = System.currentTimeMillis()
+                val actual = incidencia.observacionesCampo ?: ""
+                val nuevo = if (actual.isBlank()) textoLimpio else "$actual\n$textoLimpio"
+                viewModel.guardarIncidencia(incidencia.copy(observacionesCampo = nuevo, fechaUltimaModificacion = ahora))
+                viewModel.guardarObservacion(
+                    pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal(
+                        uuidObservacion = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        textoObservacion = textoLimpio,
+                        fechaRegistro = ahora.toString(),
+                        estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                    )
+                )
+                showDialog = false
+            }
+        )
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAB EVIDENCIAS
+// ════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val evidencias by viewModel.getEvidencias(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+    var showSheet by remember { mutableStateOf(false) }
+
+    val cameraImageUri = remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraImageUri.value?.let { uri ->
+            viewModel.guardarEvidencia(
+                pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                    uuidEvidencia = UUID.randomUUID().toString(),
+                    uuidReferencia = incidencia.uuidIncidencia,
+                    tipoReferencia = "INCIDENCIA",
+                    tipoArchivo = "FOTO",
+                    nombreArchivo = "foto_${System.currentTimeMillis()}.jpg",
+                    rutaLocal = uri.toString(),
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                )
+            )
+        }
+        showSheet = false
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()) { uris ->
+        uris.forEach { uri ->
+            viewModel.guardarEvidencia(
+                pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                    uuidEvidencia = UUID.randomUUID().toString(),
+                    uuidReferencia = incidencia.uuidIncidencia,
+                    tipoReferencia = "INCIDENCIA",
+                    tipoArchivo = "IMAGEN",
+                    nombreArchivo = "imagen_${System.currentTimeMillis()}.jpg",
+                    rutaLocal = uri.toString(),
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                )
+            )
+        }
+        showSheet = false
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                java.io.File.createTempFile("IMG_", ".jpg", context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES))
+            )
+            cameraImageUri.value = uri
+            cameraLauncher.launch(uri)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
+        if (evidencias.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Text("Sin evidencias registradas", color = Color.Gray, fontSize = 14.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(evidencias) { ev ->
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(
+                                when (ev.tipoArchivo) {
+                                    "FOTO", "IMAGEN" -> Icons.Default.Image
+                                    "AUDIO" -> Icons.Default.AudioFile
+                                    else -> Icons.Default.Description
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = GREEN
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(ev.nombreArchivo, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(ev.tipoArchivo, fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Surface(shape = RoundedCornerShape(4.dp), color = if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)) {
+                                Text(
+                                    if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) "Sync" else "Pendiente",
+                                    fontSize = 10.sp,
+                                    color = if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showSheet = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = GREEN,
+            contentColor = Color.White
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+        }
+    }
+
+    if (showSheet) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showSheet = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Agregar Evidencia", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.CameraAlt, null, tint = GREEN) }, label = "Tomar Foto", description = "Usa la cámara del dispositivo") {
+                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                }
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.Image, null, tint = GREEN) }, label = "Galería", description = "Selecciona imágenes") {
+                    galleryLauncher.launch("image/*")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EvidenciaOptionCard(icon: @Composable () -> Unit, label: String, description: String, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth(), onClick = onClick, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            icon()
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(label, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 
@@ -41,11 +42,22 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
         repository.getObservaciones(uuidIncidencia)
 
     fun getSeguimientos(uuidIncidencia: String) =
-        repository.getSeguimientos(uuidIncidencia)    
+        repository.getSeguimientos(uuidIncidencia)
+
+    fun getEvidencias(uuidIncidencia: String) =
+        repository.getEvidencias(uuidIncidencia)
+
+    fun guardarEvidencia(evidencia: EvidenciaLocal) {
+        viewModelScope.launch {
+            repository.guardarEvidencia(evidencia)
+        }
+    }    
          
     fun refrescarIncidenciasAsignadas() {
         viewModelScope.launch {
             repository.refrescarIncidenciasAsignadas()
         }
-    }            
+    }
+
+            
 }

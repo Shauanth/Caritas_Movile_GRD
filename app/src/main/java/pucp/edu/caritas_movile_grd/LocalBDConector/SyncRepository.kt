@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Base64
 import java.io.File
 import org.json.JSONObject
+import android.util.Log
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
@@ -96,7 +97,28 @@ class SyncRepository(
             }
         }
 
-        // 2. Segunda pasada: sincronizar afectados pendientes aunque la incidencia ya esté sincronizada
+        // 2. Sincronizar incidencias editadas (cambios de estado como DATA RECOPILADA)
+        val incidenciasEditadas = syncDao.getIncidenciasEditadasParaSincronizar()
+        for (incidencia in incidenciasEditadas) {
+            try {
+                val idRemoto = incidencia.idIncidenciaRemota
+                if (idRemoto.isNullOrBlank()) {
+                    errores.add("Incidencia ${incidencia.uuidIncidencia} no tiene id remoto para actualizar.")
+                    continue
+                }
+                mobileSyncApi.sincronizarIncidencia(incidencia.toMobilePayload())
+                syncDao.marcarIncidenciaComoSincronizada(
+                    uuid = incidencia.uuidIncidencia,
+                    idRemoto = idRemoto,
+                    codigoCaso = incidencia.codigoCasoRemoto
+                )
+                incidenciasSincronizadas++
+            } catch (ex: Exception) {
+                errores.add("Error al actualizar incidencia ${incidencia.uuidIncidencia}: ${ex.message}")
+            }
+        }
+
+        // 3. Segunda pasada: sincronizar afectados pendientes aunque la incidencia ya esté sincronizada
         val afectadosPendientesGlobales = syncDao.getAfectadosPendientesParaSincronizar()
 
         for (afectado in afectadosPendientesGlobales) {
@@ -268,6 +290,14 @@ class SyncRepository(
                 entregasSincronizadas++
             }
         }
+        // 7. Descargar incidencias asignadas desde el servidor
+        try {
+            descargarIncidenciasDelServidor()
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error descargando incidencias", e)
+            errores.add("No se pudieron descargar incidencias: ${e.message}")
+        }
+
         return SyncResult(
             incidenciasSincronizadas = incidenciasSincronizadas,
             afectadosSincronizados = afectadosSincronizados,
@@ -277,6 +307,67 @@ class SyncRepository(
             entregasSincronizadas = entregasSincronizadas,
             errores = errores
         )
+    }
+
+    suspend fun descargarIncidenciasDelServidor() {
+        val response = mobileSyncApi.obtenerIncidenciasAsignadas(MobileApiConfig.MOBILE_SYNC_USER_ID)
+        val items = response.optJSONArray("incidencias") ?: return
+        val incidencias = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal>()
+
+        for (i in 0 until items.length()) {
+            val wrapper = items.optJSONObject(i) ?: continue
+            val inc = wrapper.optJSONObject("incidencia") ?: continue
+            val asignacion = wrapper.optJSONObject("asignacion")
+
+            val idRemoto = inc.optString("idIncidencia").takeIf { it.isNotBlank() }
+            val codigoCaso = inc.optString("codigoCaso").takeIf { it.isNotBlank() }
+            val tipoEvento = inc.optString("tipoEvento").takeIf { it.isNotBlank() } ?: "Evento"
+            val distrito = inc.optString("distritoEvento").takeIf { it.isNotBlank() }
+            val titulo = if (!distrito.isNullOrBlank()) "$tipoEvento - $distrito"
+                         else inc.optString("tituloIncidencia").takeIf { it.isNotBlank() } ?: tipoEvento
+
+            // uuidMovil puede venir en asignacion o en incidencia — priorizar asignacion
+            val uuidMovilRaw = asignacion?.optString("uuidMovil")?.takeIf { it.isNotBlank() && it != "null" }
+                ?: inc.optString("uuidMovil").takeIf { it.isNotBlank() && it != "null" }
+            val uuid = uuidMovilRaw ?: "remote-${idRemoto ?: codigoCaso ?: System.currentTimeMillis()}"
+
+            incidencias.add(
+                pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal(
+                    uuidIncidencia          = uuid,
+                    idIncidenciaRemota      = idRemoto,
+                    uuidUsuario             = MobileApiConfig.MOBILE_SYNC_USER_ID,
+                    idParroquia             = 1,
+                    idCatalogoTipo          = 1,
+                    tipoEventoNombre        = tipoEvento,
+                    nombre                  = titulo,
+                    descripcion             = inc.optString("descripcionEvento").takeIf { it.isNotBlank() }
+                                                ?: inc.optString("relatoActual").takeIf { it.isNotBlank() }
+                                                ?: "Sin descripción",
+                    numAfectados            = inc.optInt("numAfectadosReportado", 0),
+                    estado                  = inc.optString("estadoActual").takeIf { it.isNotBlank() } ?: "ABIERTO",
+                    estadoSync              = EstadoSync.SINCRONIZADO,
+                    fechaUltimaModificacion = System.currentTimeMillis(),
+                    causa                   = inc.optString("causaEvento").takeIf { it.isNotBlank() },
+                    distrito                = distrito,
+                    direccion               = inc.optString("direccionEvento").takeIf { it.isNotBlank() },
+                    nivelAfectacion         = inc.optString("gravedad").takeIf { it.isNotBlank() },
+                    necesidades             = inc.optString("necesidades").takeIf { it.isNotBlank() },
+                    latitud                 = inc.optDouble("latitud").takeIf { !it.isNaN() },
+                    longitud                = inc.optDouble("longitud").takeIf { !it.isNaN() },
+                    codigoCasoRemoto        = codigoCaso,
+                    reportadoPorNombre      = inc.optString("reportadoPorNombre").takeIf { it.isNotBlank() },
+                    reportadoPorCelular     = inc.optString("reportadoPorCelular").takeIf { it.isNotBlank() },
+                    reportadoPorDni         = inc.optString("reportadoPorDni").takeIf { it.isNotBlank() },
+                    reportadoPorRol         = inc.optString("reportadoPorRol").takeIf { it.isNotBlank() },
+                    parroquiaNombre         = inc.optString("parroquiaNombreSnapshot").takeIf { it.isNotBlank() },
+                )
+            )
+        }
+
+        if (incidencias.isNotEmpty()) {
+            syncDao.upsertIncidencias(incidencias)
+            Log.d("SyncRepository", "Descargadas ${incidencias.size} incidencias del servidor")
+        }
     }
     private suspend fun sincronizarAfectadoPendiente(
         afectado: AfectadoLocal,
@@ -582,6 +673,8 @@ private fun EvidenciaLocal.toMobilePayload(
         put("idIncidenciaRemota", idIncidenciaRemota)
         put("idReferenciaRemota", idIncidenciaRemota)
         put("tipoReferencia", "INCIDENCIA")
+
+        put("idUsuarioCargaGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
 
         put("nombreArchivo", nombreSeguro)
         put("contentType", tipoSeguro)

@@ -149,10 +149,10 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
             EntregaKitScreen(
+                viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onConfirmarEntrega = { entrega ->
                     viewModel.realizarEntrega(entrega)
-                    navController.popBackStack()
                 }
             )
         }

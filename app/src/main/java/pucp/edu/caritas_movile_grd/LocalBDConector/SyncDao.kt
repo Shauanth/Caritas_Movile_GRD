@@ -83,6 +83,9 @@ interface SyncDao {
     @Insert
     suspend fun insertarIncidenciaOffline(incidencia: IncidenciaLocal)
 
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
+
 
     @Query("SELECT * FROM incidencia_local WHERE uuidIncidencia = :uuidIncidencia LIMIT 1")
     suspend fun getIncidenciaPorUuid(uuidIncidencia: String): IncidenciaLocal?

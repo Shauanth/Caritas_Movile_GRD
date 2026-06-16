@@ -86,6 +86,36 @@ interface SyncDao {
     @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
 
+    @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertEvidenciasIfNotExists(evidencias: List<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>)
+
+    @Query("""
+        UPDATE evidencia_local
+        SET urlS3 = :urlFirmada, rutaLocal = :urlFirmada
+        WHERE uuidEvidencia = :uuidEvidencia AND estadoSync = 'SINCRONIZADO'
+    """)
+    suspend fun refrescarUrlEvidencia(uuidEvidencia: String, urlFirmada: String)
+
+    @Query("SELECT * FROM evidencia_local WHERE estadoSync = 'PENDIENTE_ELIMINACION'")
+    suspend fun getEvidenciasPendientesEliminacion(): List<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>
+
+    @Query("DELETE FROM evidencia_local WHERE uuidEvidencia = :uuidEvidencia")
+    suspend fun deleteEvidenciaByUuid(uuidEvidencia: String)
+
+    @Query("UPDATE evidencia_local SET estadoSync = 'PENDIENTE_ELIMINACION' WHERE uuidEvidencia = :uuidEvidencia")
+    suspend fun marcarEvidenciaParaEliminar(uuidEvidencia: String)
+
+    @Query("""
+        DELETE FROM evidencia_local
+        WHERE uuidReferencia = :uuidIncidencia
+        AND estadoSync IN ('SINCRONIZADO', 'PENDIENTE_ELIMINACION')
+        AND uuidEvidencia NOT IN (:uuidsActivos)
+    """)
+    suspend fun eliminarEvidenciasRemotas(uuidIncidencia: String, uuidsActivos: List<String>)
+
+    @Query("DELETE FROM evidencia_local WHERE uuidReferencia = :uuidIncidencia AND estadoSync IN ('SINCRONIZADO', 'PENDIENTE_ELIMINACION')")
+    suspend fun eliminarTodasEvidenciasRemotas(uuidIncidencia: String)
+
 
     @Query("SELECT * FROM incidencia_local WHERE uuidIncidencia = :uuidIncidencia LIMIT 1")
     suspend fun getIncidenciaPorUuid(uuidIncidencia: String): IncidenciaLocal?

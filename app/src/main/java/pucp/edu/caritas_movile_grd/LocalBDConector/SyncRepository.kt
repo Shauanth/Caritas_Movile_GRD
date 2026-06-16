@@ -185,6 +185,23 @@ class SyncRepository(
             }
         }
 
+        // 3b. Notificar al servidor las evidencias eliminadas en móvil.
+        // NO se borra de Room aquí — el cleanup del step 7 (download) las eliminará
+        // cuando el servidor confirme que ya no las devuelve en la lista activa.
+        val evidenciasPendientesEliminacion = syncDao.getEvidenciasPendientesEliminacion()
+        for (evidencia in evidenciasPendientesEliminacion) {
+            try {
+                val payload = JSONObject().apply {
+                    put("uuidEvidencia", evidencia.uuidEvidencia)
+                }
+                mobileSyncApi.eliminarEvidencia(payload)
+                // No se llama deleteEvidenciaByUuid aquí:
+                // la eliminación de Room ocurre en el cleanup de descargarIncidenciasDelServidor()
+            } catch (ex: Exception) {
+                errores.add("Error al eliminar evidencia ${evidencia.uuidEvidencia}: ${ex.message}")
+            }
+        }
+
         // 4. Cuarta pasada: sincronizar observaciones pendientes
         val observacionesPendientes = syncDao.getObservacionesPendientesParaSincronizar()
 
@@ -368,6 +385,62 @@ class SyncRepository(
             syncDao.upsertIncidencias(incidencias)
             Log.d("SyncRepository", "Descargadas ${incidencias.size} incidencias del servidor")
         }
+
+        // Descargar evidencias del servidor para cada incidencia
+        // Mapa idRemoto → uuidLocal para encontrar la incidencia correcta
+        val mapaIdRemotoAUuid = incidencias
+            .filter { it.idIncidenciaRemota != null }
+            .associate { it.idIncidenciaRemota!! to it.uuidIncidencia }
+
+        val evidenciasServidor = mutableListOf<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>()
+        for (i in 0 until items.length()) {
+            val wrapper = items.optJSONObject(i) ?: continue
+            val inc = wrapper.optJSONObject("incidencia") ?: continue
+            val idRemoto = inc.optString("idIncidencia").takeIf { it.isNotBlank() } ?: continue
+            val uuidIncidencia = mapaIdRemotoAUuid[idRemoto] ?: continue
+            val evArray = inc.optJSONArray("evidencias") ?: continue
+            for (j in 0 until evArray.length()) {
+                val ev = evArray.optJSONObject(j) ?: continue
+                val uuidEv = ev.optString("uuidMovil").takeIf { it.isNotBlank() && it != "null" }
+                    ?: ev.optString("idEvidenciaGRD").takeIf { it.isNotBlank() }
+                    ?: continue
+                val urlFirmada = ev.optString("urlFirmada").takeIf { it.isNotBlank() && it != "null" }
+                    ?: ev.optString("urlArchivo").takeIf { it.isNotBlank() && it != "null" }
+                    ?: continue
+                evidenciasServidor.add(
+                    pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                        uuidEvidencia  = uuidEv,
+                        uuidReferencia = uuidIncidencia,
+                        rutaLocal      = urlFirmada,
+                        urlS3          = urlFirmada,
+                        nombreArchivo  = ev.optString("nombreArchivo").takeIf { it.isNotBlank() },
+                        contentType    = ev.optString("formatoArchivo").takeIf { it.isNotBlank() },
+                        descripcion    = ev.optString("descripcion").takeIf { it.isNotBlank() },
+                        estadoSync     = EstadoSync.SINCRONIZADO
+                    )
+                )
+            }
+        }
+        if (evidenciasServidor.isNotEmpty()) {
+            syncDao.insertEvidenciasIfNotExists(evidenciasServidor)
+            // Refrescar URLs firmadas de las que ya existían (expiran en 15 min)
+            for (ev in evidenciasServidor) {
+                val url = ev.urlS3 ?: continue
+                syncDao.refrescarUrlEvidencia(ev.uuidEvidencia, url)
+            }
+            Log.d("SyncRepository", "Descargadas/refrescadas ${evidenciasServidor.size} evidencias del servidor")
+        }
+
+        // Eliminar localmente evidencias SINCRONIZADAS que el servidor ya no devuelve (fueron borradas en web)
+        val evidenciasPorIncidencia = evidenciasServidor.groupBy { it.uuidReferencia }
+        for (incidencia in incidencias) {
+            val uuidsActivos = evidenciasPorIncidencia[incidencia.uuidIncidencia]?.map { it.uuidEvidencia } ?: emptyList()
+            if (uuidsActivos.isEmpty()) {
+                syncDao.eliminarTodasEvidenciasRemotas(incidencia.uuidIncidencia)
+            } else {
+                syncDao.eliminarEvidenciasRemotas(incidencia.uuidIncidencia, uuidsActivos)
+            }
+        }
     }
     private suspend fun sincronizarAfectadoPendiente(
         afectado: AfectadoLocal,
@@ -432,7 +505,8 @@ class SyncRepository(
                 false
             } else {
                 val urlArchivo = responseEvidencia
-                    .optString("urlArchivo")
+                    .optString("urlFirmada")
+                    .ifBlank { responseEvidencia.optString("urlArchivo") }
                     .ifBlank { evidencia.urlS3 ?: evidencia.rutaLocal }
 
                 syncDao.marcarEvidenciaComoSincronizada(

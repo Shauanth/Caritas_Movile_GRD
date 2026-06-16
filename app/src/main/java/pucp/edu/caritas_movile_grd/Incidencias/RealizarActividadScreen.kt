@@ -1373,9 +1373,8 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                 pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
                     uuidEvidencia = UUID.randomUUID().toString(),
                     uuidReferencia = incidencia.uuidIncidencia,
-                    tipoReferencia = "INCIDENCIA",
-                    tipoArchivo = "FOTO",
                     nombreArchivo = "foto_${System.currentTimeMillis()}.jpg",
+                    contentType = "image/jpeg",
                     rutaLocal = uri.toString(),
                     estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
                 )
@@ -1389,9 +1388,8 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                 pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
                     uuidEvidencia = UUID.randomUUID().toString(),
                     uuidReferencia = incidencia.uuidIncidencia,
-                    tipoReferencia = "INCIDENCIA",
-                    tipoArchivo = "IMAGEN",
                     nombreArchivo = "imagen_${System.currentTimeMillis()}.jpg",
+                    contentType = "image/jpeg",
                     rutaLocal = uri.toString(),
                     estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
                 )
@@ -1433,9 +1431,9 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                     ) {
                         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Icon(
-                                when (ev.tipoArchivo) {
-                                    "FOTO", "IMAGEN" -> Icons.Default.Image
-                                    "AUDIO" -> Icons.Default.AudioFile
+                                when {
+                                    ev.contentType?.startsWith("image/") == true -> Icons.Default.Image
+                                    ev.contentType?.startsWith("audio/") == true -> Icons.Default.AudioFile
                                     else -> Icons.Default.Description
                                 },
                                 contentDescription = null,
@@ -1443,8 +1441,8 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                                 tint = GREEN
                             )
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(ev.nombreArchivo, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                Text(ev.tipoArchivo, fontSize = 11.sp, color = Color.Gray)
+                                Text(ev.nombreArchivo ?: "Archivo", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(ev.contentType ?: "archivo", fontSize = 11.sp, color = Color.Gray)
                             }
                             Surface(shape = RoundedCornerShape(4.dp), color = if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)) {
                                 Text(
@@ -1471,6 +1469,7 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
     }
 
     if (showSheet) {
+        @OptIn(ExperimentalMaterial3Api::class)
         androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showSheet = false }) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Agregar Evidencia", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))

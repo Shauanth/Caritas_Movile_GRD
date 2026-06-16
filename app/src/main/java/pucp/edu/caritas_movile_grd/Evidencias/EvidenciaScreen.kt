@@ -7,6 +7,7 @@ import android.graphics.pdf.PdfRenderer
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -65,15 +66,51 @@ fun EvidenciaScreen(
 ) {
     val context = LocalContext.current
     val evidencias by viewModel.getEvidencias(uuidReferencia).collectAsState(initial = emptyList())
+    val syncState by viewModel.syncState.collectAsState()
     var showEvidenciaSheet by remember { mutableStateOf(false) }
     var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
-    // URI pendiente de confirmación antes de guardar en BD
     var pendingUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    // Sync al abrir la pantalla
+    LaunchedEffect(uuidReferencia) { viewModel.sincronizar() }
+    // Cuando el sync termina, Room Flow actualiza automáticamente la lista
+    // (no llamamos sincronizar() aquí para evitar bucle)
+
+    fun copiarAStoragePrivado(uri: Uri): String {
+        val ext = context.contentResolver.getType(uri)
+            ?.substringAfter('/')?.substringBefore(';') ?: "jpg"
+        val nombre = "evidencia_${System.currentTimeMillis()}.$ext"
+        val destino = java.io.File(context.filesDir, nombre)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            destino.outputStream().use { output -> input.copyTo(output) }
+        }
+        return destino.absolutePath
+    }
 
     fun confirmarYGuardar(uris: List<Uri>) {
         uris.forEach { uri ->
+            val rutaLocal = try {
+                copiarAStoragePrivado(uri)
+            } catch (e: Exception) {
+                uri.toString()
+            }
+            val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+            val nombreArchivo = try {
+                val cursor = context.contentResolver.query(uri, null, null, null, null)
+                cursor?.use {
+                    val idx = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (it.moveToFirst() && idx >= 0) it.getString(idx) else null
+                }
+            } catch (e: Exception) { null }
             viewModel.guardarEvidencia(
-                EvidenciaLocal(UUID.randomUUID().toString(), uuidReferencia, uri.toString(), estadoSync = EstadoSync.PENDIENTE_SUBIDA)
+                EvidenciaLocal(
+                    uuidEvidencia  = UUID.randomUUID().toString(),
+                    uuidReferencia = uuidReferencia,
+                    rutaLocal      = rutaLocal,
+                    nombreArchivo  = nombreArchivo,
+                    contentType    = mime,
+                    estadoSync     = EstadoSync.PENDIENTE_SUBIDA
+                )
             )
         }
         pendingUris = emptyList()
@@ -85,17 +122,11 @@ fun EvidenciaScreen(
     }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         showEvidenciaSheet = false
-        uris.forEach { uri ->
-            try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { }
-        }
         if (uris.isNotEmpty()) pendingUris = uris
     }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         showEvidenciaSheet = false
-        uri?.let {
-            try { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) { }
-            pendingUris = listOf(it)
-        }
+        uri?.let { pendingUris = listOf(it) }
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) { val uri = crearUriCamara(context); cameraImageUri = uri; cameraLauncher.launch(uri) }
@@ -170,20 +201,46 @@ fun EvidenciaScreen(
 @Composable
 private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
     val context = LocalContext.current
-    val uri = remember(evidencia.rutaLocal) { Uri.parse(evidencia.rutaLocal) }
-    val tipo = remember(evidencia.rutaLocal) { detectarTipo(context, evidencia.rutaLocal) }
-    val esPdf = remember(evidencia.rutaLocal) {
-        val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-        val ext  = evidencia.rutaLocal.substringAfterLast('.', "").lowercase().substringBefore('?')
-        mime == "application/pdf" || ext == "pdf"
+    val urlRemota = evidencia.urlS3?.takeIf { it.startsWith("http") }
+    val esRutaAbsoluta = evidencia.rutaLocal.startsWith("/")
+    val uri = remember(evidencia.rutaLocal) {
+        if (esRutaAbsoluta) Uri.fromFile(java.io.File(evidencia.rutaLocal))
+        else Uri.parse(evidencia.rutaLocal)
+    }
+    val tipo = remember(evidencia.rutaLocal, urlRemota) {
+        when {
+            urlRemota != null -> {
+                val ext = urlRemota.substringBefore('?').substringAfterLast('.').lowercase()
+                if (ext in EXTENSIONES_IMAGEN) TipoEvidencia.IMAGEN else TipoEvidencia.DOCUMENTO
+            }
+            else -> detectarTipo(context, evidencia.rutaLocal)
+        }
+    }
+    val esPdf = remember(evidencia.rutaLocal, urlRemota) {
+        if (urlRemota != null) {
+            urlRemota.substringBefore('?').substringAfterLast('.').lowercase() == "pdf"
+        } else {
+            val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+            val ext  = evidencia.rutaLocal.substringAfterLast('.', "").lowercase().substringBefore('?')
+            mime == "application/pdf" || ext == "pdf"
+        }
     }
     val nombreArchivo = remember(evidencia.rutaLocal) { obtenerNombreArchivo(context, uri) }
     var mostrarPreview by remember { mutableStateOf(false) }
 
-    val thumbnail by produceState<ImageBitmap?>(initialValue = null, evidencia.rutaLocal) {
+    val thumbnail by produceState<ImageBitmap?>(initialValue = null, evidencia.rutaLocal, urlRemota) {
         value = withContext(Dispatchers.IO) {
             try {
                 when {
+                    tipo == TipoEvidencia.IMAGEN && urlRemota != null -> {
+                        val conn = java.net.URL(urlRemota).openConnection() as java.net.HttpURLConnection
+                        conn.connectTimeout = 10_000
+                        conn.readTimeout = 15_000
+                        try {
+                            val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                            conn.inputStream.use { BitmapFactory.decodeStream(it, null, opts)?.asImageBitmap() }
+                        } finally { conn.disconnect() }
+                    }
                     tipo == TipoEvidencia.IMAGEN -> {
                         context.contentResolver.openInputStream(uri)?.use { stream ->
                             val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
@@ -362,10 +419,11 @@ private fun descargarEvidencia(context: Context, uri: Uri, nombreArchivo: String
 @Composable
 private fun SyncBadge(estadoSync: EstadoSync) {
     val (color, label) = when (estadoSync) {
-        EstadoSync.SINCRONIZADO     -> MaterialTheme.colorScheme.primary to "Sincronizado"
-        EstadoSync.PENDIENTE_SUBIDA -> Color(0xFFF59E0B) to "Pendiente de subida"
-        EstadoSync.NUEVO            -> Color(0xFF6366F1) to "Nuevo"
-        EstadoSync.EDITADO          -> Color(0xFFEC4899) to "Editado"
+        EstadoSync.SINCRONIZADO          -> MaterialTheme.colorScheme.primary to "Sincronizado"
+        EstadoSync.PENDIENTE_SUBIDA      -> Color(0xFFF59E0B) to "Pendiente de subida"
+        EstadoSync.NUEVO                 -> Color(0xFF6366F1) to "Nuevo"
+        EstadoSync.EDITADO               -> Color(0xFFEC4899) to "Editado"
+        EstadoSync.PENDIENTE_ELIMINACION -> Color(0xFFEF4444) to "Eliminando..."
     }
     Surface(shape = RoundedCornerShape(4.dp), color = color.copy(alpha = 0.15f)) {
         Text(label, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = color, fontWeight = FontWeight.Medium)

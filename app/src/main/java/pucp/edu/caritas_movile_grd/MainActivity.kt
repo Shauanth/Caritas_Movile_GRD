@@ -66,6 +66,10 @@ fun AppNavigation() {
         appContext = context.applicationContext
     )
 
+    val syncViewModel: SyncViewModel = viewModel(
+        factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
+    )
+
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
             LoginScreen(onLoginSuccess = { _ ->
@@ -83,9 +87,6 @@ fun AppNavigation() {
             )
             val simulacroViewModel: SimulacroViewModel = viewModel(
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
-            )
-            val syncViewModel: SyncViewModel = viewModel(
-                factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
             )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,
@@ -136,7 +137,7 @@ fun AppNavigation() {
         composable("subir_evidencia/{uuid}") { backStackEntry ->
             val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
             val viewModel: EvidenciaViewModel = viewModel(
-                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository) }
+                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository, syncViewModel) }
             )
             EvidenciaScreen(
                 uuidReferencia = uuid,

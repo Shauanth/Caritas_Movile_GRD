@@ -22,7 +22,11 @@ class MobileSyncApi(
         return postJson("/api/mobile/sync/afectados", payload)
     }
     suspend fun sincronizarEvidencia(payload: JSONObject): JSONObject {
-    return postJson("/api/mobile/sync/evidencias", payload)
+        return postJson("/api/mobile/sync/evidencias", payload)
+    }
+
+    suspend fun eliminarEvidencia(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/evidencias/eliminar", payload)
     }
     suspend fun sincronizarObservacion(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/observaciones", payload)
@@ -37,8 +41,8 @@ class MobileSyncApi(
         return getJson("/api/mobile/catalogos")
     }   
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
-        val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
-                   else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"
+        val path = if (idUsuarioGRD.isBlank()) "/api/mobile/mis-incidencias"
+                   else "/api/mobile/mis-incidencias?idUsuarioGRD=$idUsuarioGRD"
         return getJson(path)
     }     
     private suspend fun getJson(path: String): JSONObject {

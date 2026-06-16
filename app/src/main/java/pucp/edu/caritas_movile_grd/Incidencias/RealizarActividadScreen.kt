@@ -218,6 +218,13 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
     .collectAsState(initial = emptyList())
     var showObsDialog by remember { mutableStateOf(false) }
     var showSeguimientoDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showFinalizarDialog by remember { mutableStateOf(false) }
+    var finalizandoRecopilacion by remember { mutableStateOf(false) }
+
+    val puedeFinalizarRecopilacion = incidencia.estado.equals("ASIGNADO", ignoreCase = true)
+    val recopilacionFinalizada = incidencia.estado.equals("DATA RECOPILADA", ignoreCase = true)
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -387,6 +394,73 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
                 }
             }
         }
+        item {
+            if (puedeFinalizarRecopilacion) {
+                Button(
+                    onClick = { showFinalizarDialog = true },
+                    enabled = !finalizandoRecopilacion,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GREEN,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    if (finalizandoRecopilacion) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Finalizando...")
+                    } else {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Finalizar recopilación")
+                    }
+                }
+            } else if (recopilacionFinalizada) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFE8F5E9)
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = GREEN
+                        )
+                        Column {
+                            Text(
+                                "Recopilación finalizada",
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF1B5E20)
+                            )
+                            Text(
+                                "La información de campo ya fue enviada para revisión.",
+                                fontSize = 12.sp,
+                                color = Color(0xFF2E7D32)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
 
         // ── Seguimiento ───────────────────────────────────────────────────────
         item {
@@ -492,7 +566,64 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
                 showSeguimientoDialog = false
             }
         )
-    }    
+    } 
+    if (showFinalizarDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!finalizandoRecopilacion) {
+                    showFinalizarDialog = false
+                }
+            },
+            title = {
+                Text("Finalizar recopilación")
+            },
+            text = {
+                Text(
+                    "¿Confirmas que ya terminaste de recopilar la información de campo? " +
+                        "El caso pasará a DATA RECOPILADA y será revisado desde la web."
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !finalizandoRecopilacion,
+                    onClick = {
+                        showFinalizarDialog = false
+                        finalizandoRecopilacion = true
+
+                        viewModel.finalizarRecopilacion(incidencia) { ok, message ->
+                            finalizandoRecopilacion = false
+
+                            Toast.makeText(
+                                context,
+                                if (ok) {
+                                    "Recopilación finalizada."
+                                } else {
+                                    message ?: "No se pudo finalizar la recopilación."
+                                },
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GREEN,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    enabled = !finalizandoRecopilacion,
+                    onClick = { showFinalizarDialog = false }
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+
 }
 
 // ════════════════════════════════════════════════════════════════════════════

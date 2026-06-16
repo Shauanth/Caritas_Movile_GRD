@@ -42,5 +42,6 @@ data class IncidenciaLocal(
 
     val latitud: Double? = null,
     val longitud: Double? = null,
-    val codigoCasoRemoto: String? = null
+    val codigoCasoRemoto: String? = null,
+    val idResponsableGRD: String? = null  // idUsuarioResponsableGRD del servidor
 )

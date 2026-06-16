@@ -128,9 +128,14 @@ fun AppNavigation() {
             val viewModel: IncidenciaViewModel = viewModel(
                 factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
             )
+            val kitVm: KitViewModel = viewModel(
+                factory = GenericViewModelFactory { KitViewModel(kitRepository) }
+            )
             RealizarActividadScreen(
                 uuidIncidencia = uuid,
                 viewModel = viewModel,
+                syncViewModel = syncViewModel,
+                kitViewModel = kitVm,
                 onBack = { navController.popBackStack() }
             )
         }

@@ -11,6 +11,9 @@ interface KitDao {
     @Query("SELECT * FROM entrega_kit_local WHERE uuidAfectado = :uuidAfectado")
     fun getEntregasByAfectado(uuidAfectado: String): Flow<List<EntregaKitLocal>>
 
+    @Query("SELECT * FROM entrega_kit_local WHERE uuidIncidencia = :uuidIncidencia ORDER BY fechaEntrega DESC")
+    fun getEntregasByIncidencia(uuidIncidencia: String): Flow<List<EntregaKitLocal>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEntrega(entrega: EntregaKitLocal)
 

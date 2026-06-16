@@ -83,11 +83,43 @@ interface SyncDao {
     @Insert
     suspend fun insertarIncidenciaOffline(incidencia: IncidenciaLocal)
 
-    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
     suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
+
+    @Query("""
+        UPDATE incidencia_local
+        SET idIncidenciaRemota = :idRemoto,
+            codigoCasoRemoto = :codigoCaso,
+            nombre = :nombre,
+            descripcion = :descripcion,
+            estado = CASE
+                WHEN estado = 'DATA RECOPILADA'
+                 AND :estado IN ('ASIGNADO', 'ABIERTO', 'EN CAMPO')
+                THEN estado
+                ELSE :estado
+            END,
+            idResponsableGRD = :idResponsableGRD,
+            estadoSync = 'SINCRONIZADO',
+            fechaUltimaModificacion = :fechaUltimaModificacion
+        WHERE uuidIncidencia = :uuid
+        AND estadoSync = 'SINCRONIZADO'
+    """)
+    suspend fun actualizarIncidenciaSincronizada(
+        uuid: String,
+        idRemoto: String?,
+        codigoCaso: String?,
+        nombre: String,
+        descripcion: String,
+        estado: String,
+        idResponsableGRD: String?,
+        fechaUltimaModificacion: Long
+    )
 
     @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
     suspend fun insertEvidenciasIfNotExists(evidencias: List<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>)
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertAfectadosIfNotExists(afectados: List<pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal>)
 
     @Query("""
         UPDATE evidencia_local

@@ -12,6 +12,9 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
     val entregas: StateFlow<List<EntregaKitLocal>> = repository.allEntregas
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun getEntregasPorIncidencia(uuidIncidencia: String) =
+        repository.getEntregasPorIncidencia(uuidIncidencia)
+
     fun realizarEntrega(entrega: EntregaKitLocal) {
         viewModelScope.launch {
             repository.insertarEntrega(entrega)

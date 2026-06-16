@@ -104,9 +104,12 @@ class SyncRepository(
                 val idRemoto = incidencia.idIncidenciaRemota
                 if (idRemoto.isNullOrBlank()) {
                     errores.add("Incidencia ${incidencia.uuidIncidencia} no tiene id remoto para actualizar.")
+                    Log.w("SyncRepo", "EDITADO skip: uuid=${incidencia.uuidIncidencia} sin idRemoto")
                     continue
                 }
-                mobileSyncApi.sincronizarIncidencia(incidencia.toMobilePayload())
+                Log.d("SyncRepo", "EDITADO upload: uuid=${incidencia.uuidIncidencia} idRemoto=$idRemoto estado=${incidencia.estado}")
+                val respuesta = mobileSyncApi.sincronizarIncidencia(incidencia.toMobilePayload())
+                Log.d("SyncRepo", "EDITADO respuesta: $respuesta")
                 syncDao.marcarIncidenciaComoSincronizada(
                     uuid = incidencia.uuidIncidencia,
                     idRemoto = idRemoto,
@@ -114,6 +117,7 @@ class SyncRepository(
                 )
                 incidenciasSincronizadas++
             } catch (ex: Exception) {
+                Log.e("SyncRepo", "EDITADO error: ${incidencia.uuidIncidencia}", ex)
                 errores.add("Error al actualizar incidencia ${incidencia.uuidIncidencia}: ${ex.message}")
             }
         }
@@ -372,6 +376,7 @@ class SyncRepository(
                     latitud                 = inc.optDouble("latitud").takeIf { !it.isNaN() },
                     longitud                = inc.optDouble("longitud").takeIf { !it.isNaN() },
                     codigoCasoRemoto        = codigoCaso,
+                    idResponsableGRD        = inc.optString("idUsuarioResponsableGRD").takeIf { it.isNotBlank() && it != "null" },
                     reportadoPorNombre      = inc.optString("reportadoPorNombre").takeIf { it.isNotBlank() },
                     reportadoPorCelular     = inc.optString("reportadoPorCelular").takeIf { it.isNotBlank() },
                     reportadoPorDni         = inc.optString("reportadoPorDni").takeIf { it.isNotBlank() },
@@ -382,7 +387,22 @@ class SyncRepository(
         }
 
         if (incidencias.isNotEmpty()) {
+            // IGNORE: inserta las nuevas sin pisar las que tienen cambios locales (EDITADO/NUEVO)
             syncDao.upsertIncidencias(incidencias)
+            // Solo actualiza las que ya están SINCRONIZADAS (no tiene cambios pendientes del usuario)
+            for (inc in incidencias) {
+                Log.d("SyncRepo", "DOWNLOAD actualizar: uuid=${inc.uuidIncidencia} estado=${inc.estado}")
+                syncDao.actualizarIncidenciaSincronizada(
+                    uuid                    = inc.uuidIncidencia,
+                    idRemoto                = inc.idIncidenciaRemota,
+                    codigoCaso              = inc.codigoCasoRemoto,
+                    nombre                  = inc.nombre,
+                    descripcion             = inc.descripcion,
+                    estado                  = inc.estado,
+                    idResponsableGRD        = inc.idResponsableGRD,
+                    fechaUltimaModificacion = inc.fechaUltimaModificacion
+                )
+            }
             Log.d("SyncRepository", "Descargadas ${incidencias.size} incidencias del servidor")
         }
 
@@ -429,6 +449,56 @@ class SyncRepository(
                 syncDao.refrescarUrlEvidencia(ev.uuidEvidencia, url)
             }
             Log.d("SyncRepository", "Descargadas/refrescadas ${evidenciasServidor.size} evidencias del servidor")
+        }
+
+        // Descargar afectados/familias del servidor (registrados desde web)
+        val afectadosServidor = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal>()
+        for (i in 0 until items.length()) {
+            val wrapper = items.optJSONObject(i) ?: continue
+            val inc = wrapper.optJSONObject("incidencia") ?: continue
+            val idRemoto = inc.optString("idIncidencia").takeIf { it.isNotBlank() } ?: continue
+            val uuidIncidencia = mapaIdRemotoAUuid[idRemoto] ?: continue
+            val grupos = inc.optJSONArray("gruposFamiliares") ?: continue
+            for (g in 0 until grupos.length()) {
+                val grupo = grupos.optJSONObject(g) ?: continue
+                val familiaId = grupo.optString("idGrupoFamiliar").takeIf { it.isNotBlank() } ?: continue
+                val familiaNombre = grupo.optString("nombreReferencia").takeIf { it.isNotBlank() }
+                val personas = grupo.optJSONArray("personas") ?: continue
+                for (p in 0 until personas.length()) {
+                    val persona = personas.optJSONObject(p) ?: continue
+                    // Usar uuidMovil si existe, si no usar idPersonaAfectada como clave
+                    val uuidAfectado = persona.optString("uuidMovil").takeIf { it.isNotBlank() && it != "null" }
+                        ?: persona.optString("idPersonaAfectada").takeIf { it.isNotBlank() }
+                        ?: continue
+                    val apellidos = persona.optString("apellidos").takeIf { it.isNotBlank() }
+                    val (apellidoPaterno, apellidoMaterno) = if (apellidos != null) {
+                        val partes = apellidos.trim().split(" ", limit = 2)
+                        partes.getOrNull(0) to partes.getOrNull(1)
+                    } else null to null
+                    afectadosServidor.add(
+                        pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal(
+                            uuidAfectado      = uuidAfectado,
+                            uuidIncidencia    = uuidIncidencia,
+                            idCatalogoDoc     = 1,
+                            idAfectadoRemoto  = persona.optString("idPersonaAfectada").takeIf { it.isNotBlank() },
+                            documentoIdentidad = persona.optString("numeroDocumento").takeIf { it.isNotBlank() } ?: "",
+                            nombres           = persona.optString("nombres").takeIf { it.isNotBlank() } ?: "Sin nombre",
+                            apellidoPaterno   = apellidoPaterno,
+                            apellidoMaterno   = apellidoMaterno,
+                            genero            = persona.optString("sexo").takeIf { it.isNotBlank() },
+                            parentesco        = persona.optString("parentesco").takeIf { it.isNotBlank() },
+                            situacionActual   = persona.optString("condicionSalud").takeIf { it.isNotBlank() },
+                            familiaId         = familiaId,
+                            familiaNombre     = familiaNombre,
+                            estadoSync        = EstadoSync.SINCRONIZADO
+                        )
+                    )
+                }
+            }
+        }
+        if (afectadosServidor.isNotEmpty()) {
+            syncDao.insertAfectadosIfNotExists(afectadosServidor)
+            Log.d("SyncRepository", "Descargados ${afectadosServidor.size} afectados del servidor")
         }
 
         // Eliminar localmente evidencias SINCRONIZADAS que el servidor ya no devuelve (fueron borradas en web)
@@ -634,6 +704,7 @@ class SyncRepository(
 private fun IncidenciaLocal.toMobilePayload(): JSONObject {
     return JSONObject().apply {
         put("uuidIncidencia", uuidIncidencia)
+        putNullable("idIncidenciaRemota", idIncidenciaRemota)
         put("uuidUsuario", uuidUsuario)
         put("idParroquia", idParroquia)
         put("idCatalogoTipo", idCatalogoTipo)

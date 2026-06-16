@@ -5,8 +5,11 @@ import kotlinx.coroutines.flow.Flow
 class KitRepository(private val kitDao: KitDao) {
     val allEntregas: Flow<List<EntregaKitLocal>> = kitDao.getAllEntregas()
 
-    fun getEntregasPorAfectado(uuidAfectado: String): Flow<List<EntregaKitLocal>> = 
+    fun getEntregasPorAfectado(uuidAfectado: String): Flow<List<EntregaKitLocal>> =
         kitDao.getEntregasByAfectado(uuidAfectado)
+
+    fun getEntregasPorIncidencia(uuidIncidencia: String): Flow<List<EntregaKitLocal>> =
+        kitDao.getEntregasByIncidencia(uuidIncidencia)
 
     suspend fun insertarEntrega(entrega: EntregaKitLocal) {
         kitDao.insertEntrega(entrega)

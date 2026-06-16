@@ -36,10 +36,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
+import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
+import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.*
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
+import pucp.edu.caritas_movile_grd.Kits.KitRepository
+import pucp.edu.caritas_movile_grd.Kits.KitViewModel
 
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
@@ -49,6 +54,8 @@ private val GREEN = Color(0xFF009850)
 fun RealizarActividadScreen(
     uuidIncidencia: String,
     viewModel: IncidenciaViewModel,
+    syncViewModel: SyncViewModel,
+    kitViewModel: KitViewModel,
     onBack: () -> Unit
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
@@ -64,11 +71,13 @@ fun RealizarActividadScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias")
+    val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias", "Kits")
     var showMapSheet by remember { mutableStateOf(false) }
     var showFinalizarDialog by remember { mutableStateOf(false) }
 
-    val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO"
+    val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO" &&
+        (incidencia.idResponsableGRD == MobileApiConfig.MOBILE_SYNC_USER_ID ||
+         incidencia.uuidUsuario == MobileApiConfig.MOBILE_SYNC_USER_ID)
 
     Scaffold(
         topBar = {
@@ -140,6 +149,7 @@ fun RealizarActividadScreen(
                 1 -> FamiliasTab(incidencia, afectados, viewModel)
                 2 -> ObservacionesTab(incidencia, viewModel)
                 3 -> EvidenciasTab(incidencia, viewModel)
+                4 -> KitsTab(incidencia, afectados, kitViewModel)
             }
         }
     }
@@ -159,7 +169,7 @@ fun RealizarActividadScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("¿Confirmas que completaste la recopilación de datos?")
                     Text(
-                        "El estado cambiará a DATA RECOPILADA y se sincronizará al presionar Sincronizar.",
+                        "El estado cambiará a DATA RECOPILADA y se sincronizará automáticamente.",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -168,14 +178,16 @@ fun RealizarActividadScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.guardarIncidencia(
+                        showFinalizarDialog = false
+                        viewModel.guardarIncidenciaYLuego(
                             incidencia.copy(
                                 estado = "DATA RECOPILADA",
-                                estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.EDITADO,
+                                estadoSync = EstadoSync.EDITADO,
                                 fechaUltimaModificacion = System.currentTimeMillis()
                             )
-                        )
-                        showFinalizarDialog = false
+                        ) {
+                            syncViewModel.sincronizarPendientes()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN)
                 ) {
@@ -496,6 +508,8 @@ private fun FamiliasTab(
 ) {
     var filtro by remember { mutableStateOf("Todos") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var editandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
+    var borrandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
     val filtros = listOf("Todos", "Pendientes", "Confirmados")
 
     val afectadosFiltrados = when (filtro) {
@@ -574,7 +588,11 @@ private fun FamiliasTab(
                 }
             } else {
                 items(afectadosFiltrados) { afectado ->
-                    AfectadoCard(afectado)
+                    AfectadoCard(
+                        afectado = afectado,
+                        onEdit = { editandoAfectado = afectado },
+                        onDelete = { borrandoAfectado = afectado }
+                    )
                 }
             }
 
@@ -599,6 +617,36 @@ private fun FamiliasTab(
             onConfirm = { afectado ->
                 viewModel.guardarAfectado(afectado)
                 showAddDialog = false
+            }
+        )
+    }
+
+    editandoAfectado?.let { afectado ->
+        AgregarPersonaDialog(
+            uuidIncidencia = incidencia.uuidIncidencia,
+            afectadoInicial = afectado,
+            onDismiss = { editandoAfectado = null },
+            onConfirm = { editado ->
+                viewModel.editarAfectado(editado.copy(uuidAfectado = afectado.uuidAfectado, idAfectadoRemoto = afectado.idAfectadoRemoto))
+                editandoAfectado = null
+            }
+        )
+    }
+
+    borrandoAfectado?.let { afectado ->
+        AlertDialog(
+            onDismissRequest = { borrandoAfectado = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFD32F2F)) },
+            title = { Text("Eliminar persona") },
+            text = { Text("¿Eliminar a ${afectado.nombres}? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.eliminarAfectado(afectado); borrandoAfectado = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                ) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { borrandoAfectado = null }) { Text("Cancelar") }
             }
         )
     }
@@ -709,7 +757,11 @@ private fun SeguimientoItem(seguimiento: SeguimientoLocal) {
     }
 }
 @Composable
-private fun AfectadoCard(afectado: AfectadoLocal) {
+private fun AfectadoCard(
+    afectado: AfectadoLocal,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     val esPendiente = afectado.estadoSync == EstadoSync.NUEVO || afectado.estadoSync == EstadoSync.EDITADO
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -720,40 +772,39 @@ private fun AfectadoCard(afectado: AfectadoLocal) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = Color.Gray
-                )
+                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.Gray)
                 Column {
                     Text(afectado.nombres, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                     Text(
                         "${TIPO_DOC_MAP[afectado.idCatalogoDoc] ?: "Doc"}: ${afectado.documentoIdentidad}",
-                        fontSize = 12.sp,
-                        color = Color.Gray
+                        fontSize = 12.sp, color = Color.Gray
                     )
                 }
             }
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = if (esPendiente) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)
-            ) {
-                Text(
-                    if (esPendiente) "Pendiente" else "Confirmado",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (esPendiente) Color(0xFFE65100) else Color(0xFF2E7D32)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(50), color = if (esPendiente) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)) {
+                    Text(
+                        if (esPendiente) "Pendiente" else "Confirmado",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (esPendiente) Color(0xFFE65100) else Color(0xFF2E7D32)
+                    )
+                }
+                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color(0xFF1976D2), modifier = Modifier.size(16.dp))
+                }
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                }
             }
         }
     }
@@ -1077,12 +1128,14 @@ private fun iniciarGrabacion(recognizer: SpeechRecognizer, onStarted: () -> Unit
 @Composable
 private fun AgregarPersonaDialog(
     uuidIncidencia: String,
+    afectadoInicial: AfectadoLocal? = null,
     onDismiss: () -> Unit,
     onConfirm: (AfectadoLocal) -> Unit
 ) {
-    var nombres by remember { mutableStateOf("") }
-    var documento by remember { mutableStateOf("") }
-    var tipoDocIdx by remember { mutableIntStateOf(1) } // 1=DNI
+    val esEdicion = afectadoInicial != null
+    var nombres by remember { mutableStateOf(afectadoInicial?.nombres ?: "") }
+    var documento by remember { mutableStateOf(afectadoInicial?.documentoIdentidad ?: "") }
+    var tipoDocIdx by remember { mutableIntStateOf(afectadoInicial?.idCatalogoDoc ?: 1) }
     var expanded by remember { mutableStateOf(false) }
     val tiposDoc = listOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 
@@ -1094,7 +1147,7 @@ private fun AgregarPersonaDialog(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("Agregar persona afectada", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(if (esEdicion) "Editar persona" else "Agregar persona afectada", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
             OutlinedTextField(
                 value = nombres,
@@ -1152,12 +1205,14 @@ private fun AgregarPersonaDialog(
                         if (nombres.isNotBlank() && documento.isNotBlank()) {
                             onConfirm(
                                 AfectadoLocal(
-                                    uuidAfectado = UUID.randomUUID().toString(),
+                                    uuidAfectado = afectadoInicial?.uuidAfectado ?: UUID.randomUUID().toString(),
                                     uuidIncidencia = uuidIncidencia,
                                     idCatalogoDoc = tipoDocIdx,
                                     documentoIdentidad = documento.trim(),
                                     nombres = nombres.trim(),
-                                    estadoSync = EstadoSync.NUEVO
+                                    familiaId = afectadoInicial?.familiaId,
+                                    familiaNombre = afectadoInicial?.familiaNombre,
+                                    estadoSync = if (esEdicion) EstadoSync.EDITADO else EstadoSync.NUEVO
                                 )
                             )
                         }
@@ -1494,6 +1549,340 @@ private fun EvidenciaOptionCard(icon: @Composable () -> Unit, label: String, des
                 Text(label, fontWeight = FontWeight.Medium, fontSize = 15.sp)
                 Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+// ── Kits Tab ─────────────────────────────────────────────────────────────────
+
+private val TIPOS_KIT = listOf(
+    "Kit de Alimentos", "Kit de Higiene", "Kit de Abrigo",
+    "Kit de Cocina", "Kit Escolar", "Colchoneta", "Frazada", "Otro"
+)
+
+@Composable
+private fun KitsTab(
+    incidencia: IncidenciaLocal,
+    afectados: List<AfectadoLocal>,
+    kitViewModel: KitViewModel
+) {
+    val entregas by kitViewModel.getEntregasPorIncidencia(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+
+    var showDialog by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (entregas.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.Inventory2,
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp),
+                    tint = Color.LightGray
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Sin entregas registradas", color = Color.Gray, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { showDialog = true }) {
+                    Text("Registrar entrega", color = GREEN)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Resumen
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val pendientes = entregas.count { it.estadoSync != EstadoSync.SINCRONIZADO }
+                        KitResumenChip("Total", entregas.size, Color(0xFF1565C0))
+                        KitResumenChip("Pendientes", pendientes, Color(0xFFE65100))
+                        KitResumenChip("Sync", entregas.size - pendientes, GREEN)
+                    }
+                }
+                items(entregas, key = { it.uuidEntrega }) { entrega ->
+                    val nombreAfectado = afectados
+                        .find { it.uuidAfectado == entrega.uuidAfectado }
+                        ?.let { "${it.nombres} ${it.apellidoPaterno ?: ""}".trim() }
+                        ?: "Afectado desconocido"
+                    EntregaKitCard(entrega = entrega, nombreAfectado = nombreAfectado)
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = GREEN,
+            contentColor = Color.White
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Nueva entrega")
+        }
+    }
+
+    if (showDialog) {
+        NuevaEntregaDialog(
+            afectados = afectados,
+            uuidIncidencia = incidencia.uuidIncidencia,
+            idIncidenciaRemota = incidencia.idIncidenciaRemota,
+            onDismiss = { showDialog = false },
+            onConfirmar = { entrega ->
+                kitViewModel.realizarEntrega(entrega)
+                showDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun EntregaKitCard(entrega: EntregaKitLocal, nombreAfectado: String) {
+    val sincronizado = entrega.estadoSync == EstadoSync.SINCRONIZADO
+    val esParcial = entrega.kitEntregado.contains("PARCIAL", ignoreCase = true)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GREEN.copy(alpha = 0.1f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Inventory2, contentDescription = null, tint = GREEN, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Column {
+                        Text(
+                            entrega.kitEntregado.replace(" (COMPLETA)", "").replace(" (PARCIAL)", ""),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Text("Cantidad: ${entrega.cantidad}", fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (esParcial) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)
+                    ) {
+                        Text(
+                            if (esParcial) "Parcial" else "Completa",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (esParcial) Color(0xFFE65100) else Color(0xFF2E7D32),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (sincronizado) Color(0xFFE8F5E9) else Color(0xFFFFF8E1)
+                    ) {
+                        Text(
+                            if (sincronizado) "✓ Sync" else "Pendiente",
+                            fontSize = 10.sp,
+                            color = if (sincronizado) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = Color(0xFFF0F0F0))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                Text(nombreAfectado, fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                Text(
+                    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(entrega.fechaEntrega)),
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NuevaEntregaDialog(
+    afectados: List<AfectadoLocal>,
+    uuidIncidencia: String,
+    idIncidenciaRemota: String?,
+    onDismiss: () -> Unit,
+    onConfirmar: (EntregaKitLocal) -> Unit
+) {
+    var afectadoSeleccionado by remember { mutableStateOf(afectados.firstOrNull()) }
+    var kitSeleccionado by remember { mutableStateOf(TIPOS_KIT[0]) }
+    var cantidad by remember { mutableIntStateOf(1) }
+    var tipoEntrega by remember { mutableStateOf("COMPLETA") }
+    var afectadoExpanded by remember { mutableStateOf(false) }
+    var kitExpanded by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar Entrega de Kit", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                // Seleccionar afectado
+                if (afectados.isEmpty()) {
+                    Text(
+                        "No hay afectados registrados en esta incidencia.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    ExposedDropdownMenuBox(
+                        expanded = afectadoExpanded,
+                        onExpandedChange = { afectadoExpanded = !afectadoExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = afectadoSeleccionado?.let {
+                                "${it.nombres} ${it.apellidoPaterno ?: ""}".trim()
+                            } ?: "Seleccionar afectado",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Afectado") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectadoExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = afectadoExpanded,
+                            onDismissRequest = { afectadoExpanded = false }
+                        ) {
+                            afectados.forEach { afectado ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("${afectado.nombres} ${afectado.apellidoPaterno ?: ""}".trim(), fontSize = 14.sp)
+                                            Text(afectado.documentoIdentidad, fontSize = 11.sp, color = Color.Gray)
+                                        }
+                                    },
+                                    onClick = {
+                                        afectadoSeleccionado = afectado
+                                        afectadoExpanded = false
+                                        errorMsg = ""
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Tipo de kit
+                ExposedDropdownMenuBox(
+                    expanded = kitExpanded,
+                    onExpandedChange = { kitExpanded = !kitExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = kitSeleccionado,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Tipo de Kit") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = kitExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(expanded = kitExpanded, onDismissRequest = { kitExpanded = false }) {
+                        TIPOS_KIT.forEach { kit ->
+                            DropdownMenuItem(
+                                text = { Text(kit) },
+                                onClick = { kitSeleccionado = kit; kitExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                // Cantidad
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Cantidad:", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    IconButton(onClick = { if (cantidad > 1) cantidad-- }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Remove, contentDescription = null, tint = GREEN)
+                    }
+                    Text(cantidad.toString(), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 32.dp))
+                    IconButton(onClick = { cantidad++ }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = GREEN)
+                    }
+                }
+
+                // Completa / Parcial
+                Text("Tipo de entrega:", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("COMPLETA", "PARCIAL").forEach { tipo ->
+                        FilterChip(
+                            selected = tipoEntrega == tipo,
+                            onClick = { tipoEntrega = tipo },
+                            label = { Text(tipo, fontSize = 13.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = if (tipo == "COMPLETA") GREEN else Color(0xFFE65100),
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (afectadoSeleccionado == null) { errorMsg = "Selecciona un afectado"; return@Button }
+                    onConfirmar(
+                        EntregaKitLocal(
+                            uuidEntrega        = UUID.randomUUID().toString(),
+                            uuidAfectado       = afectadoSeleccionado!!.uuidAfectado,
+                            uuidIncidencia     = uuidIncidencia,
+                            idIncidenciaRemota = idIncidenciaRemota,
+                            kitEntregado       = "$kitSeleccionado ($tipoEntrega)",
+                            cantidad           = cantidad,
+                            fechaEntrega       = System.currentTimeMillis(),
+                            estadoSync         = EstadoSync.NUEVO
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = GREEN),
+                enabled = afectados.isNotEmpty()
+            ) { Text("Confirmar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+private fun KitResumenChip(label: String, count: Int, color: Color) {
+    Surface(shape = RoundedCornerShape(8.dp), color = color.copy(alpha = 0.1f)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(count.toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = color)
+            Text(label, fontSize = 12.sp, color = color)
         }
     }
 }

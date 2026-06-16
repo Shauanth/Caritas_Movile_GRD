@@ -30,6 +30,16 @@ class IncidenciaRepository(
     suspend fun guardarAfectado(afectado: AfectadoLocal) {
         incidenciaDao.insertAfectado(afectado)
     }
+
+    suspend fun editarAfectado(afectado: AfectadoLocal) {
+        val nuevoEstado = if (afectado.estadoSync == EstadoSync.SINCRONIZADO)
+            EstadoSync.EDITADO else afectado.estadoSync
+        incidenciaDao.updateAfectado(afectado.copy(estadoSync = nuevoEstado))
+    }
+
+    suspend fun eliminarAfectado(afectado: AfectadoLocal) {
+        incidenciaDao.deleteAfectado(afectado)
+    }
     suspend fun guardarObservacion(observacion: ObservacionLocal) {
         incidenciaDao.insertObservacion(observacion)
     }   

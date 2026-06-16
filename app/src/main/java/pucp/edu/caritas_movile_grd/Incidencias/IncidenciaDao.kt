@@ -27,6 +27,12 @@ interface IncidenciaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectado(afectado: AfectadoLocal)
 
+    @Update
+    suspend fun updateAfectado(afectado: AfectadoLocal)
+
+    @Delete
+    suspend fun deleteAfectado(afectado: AfectadoLocal)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertObservacion(observacion: ObservacionLocal)
 

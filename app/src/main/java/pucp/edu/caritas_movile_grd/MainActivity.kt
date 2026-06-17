@@ -63,7 +63,12 @@ fun AppNavigation() {
 
     val syncRepository = SyncRepository(
         syncDao = database.syncDao(),
+        kitDao = database.kitDao(),
         appContext = context.applicationContext
+    )
+
+    val syncViewModel: SyncViewModel = viewModel(
+        factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
     )
 
     NavHost(navController = navController, startDestination = "login") {
@@ -83,9 +88,6 @@ fun AppNavigation() {
             )
             val simulacroViewModel: SimulacroViewModel = viewModel(
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
-            )
-            val syncViewModel: SyncViewModel = viewModel(
-                factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
             )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,
@@ -128,19 +130,24 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
             )
             val evidenciaViewModel: EvidenciaViewModel = viewModel(
-                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository) }
+                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository, syncViewModel) }
+            )
+            val kitVm: KitViewModel = viewModel(
+                factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
             RealizarActividadScreen(
                 uuidIncidencia = uuid,
                 viewModel = viewModel,
                 evidenciaViewModel = evidenciaViewModel,
+                syncViewModel = syncViewModel,
+                kitViewModel = kitVm,
                 onBack = { navController.popBackStack() }
             )
         }
         composable("subir_evidencia/{uuid}") { backStackEntry ->
             val uuid = backStackEntry.arguments?.getString("uuid") ?: ""
             val viewModel: EvidenciaViewModel = viewModel(
-                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository) }
+                factory = GenericViewModelFactory { EvidenciaViewModel(evidenciaRepository, syncViewModel) }
             )
             EvidenciaScreen(
                 uuidReferencia = uuid,
@@ -153,10 +160,10 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
             EntregaKitScreen(
+                viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onConfirmarEntrega = { entrega ->
                     viewModel.realizarEntrega(entrega)
-                    navController.popBackStack()
                 }
             )
         }

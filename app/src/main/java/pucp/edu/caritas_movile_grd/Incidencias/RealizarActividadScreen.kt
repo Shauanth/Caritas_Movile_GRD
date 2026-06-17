@@ -38,13 +38,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
+import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
+import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.*
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaContent
-
+import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
+import pucp.edu.caritas_movile_grd.Kits.KitRepository
+import pucp.edu.caritas_movile_grd.Kits.KitViewModel
+import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
+import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
 
@@ -74,11 +80,14 @@ fun RealizarActividadScreen(
     uuidIncidencia: String,
     viewModel: IncidenciaViewModel,
     evidenciaViewModel: EvidenciaViewModel,
+    syncViewModel: SyncViewModel,
+    kitViewModel: KitViewModel,
     onBack: () -> Unit
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
     val incidencia = incidencias.find { it.uuidIncidencia == uuidIncidencia }
     val afectados by viewModel.getAfectados(uuidIncidencia).collectAsState(initial = emptyList())
+    val context = LocalContext.current
 
     if (incidencia == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -88,9 +97,14 @@ fun RealizarActividadScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
-    
-    val tabs = listOf("Info", "Familias", "Evidencias")
+
+    val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias", "Kits")
     var showMapSheet by remember { mutableStateOf(false) }
+    var showFinalizarDialog by remember { mutableStateOf(false) }
+
+    val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO" &&
+        (incidencia.idResponsableGRD == MobileApiConfig.MOBILE_SYNC_USER_ID ||
+         incidencia.uuidUsuario == MobileApiConfig.MOBILE_SYNC_USER_ID)
 
     Scaffold(
         topBar = {
@@ -116,6 +130,11 @@ fun RealizarActividadScreen(
                     }
                 },
                 actions = {
+                    if (puedeFinalizarRecopilacion) {
+                        TextButton(onClick = { showFinalizarDialog = true }) {
+                            Text("Finalizar", color = GREEN, fontWeight = FontWeight.Bold)
+                        }
+                    }
                     IconButton(onClick = { showMapSheet = true }) {
                         Icon(
                             Icons.Default.MyLocation,
@@ -155,11 +174,13 @@ fun RealizarActividadScreen(
             when (selectedTab) {
                 0 -> InfoTab(incidencia, viewModel)
                 1 -> FamiliasTab(incidencia, afectados, viewModel)
-                2 -> EvidenciaContent(
+                2 -> ObservacionesTab(incidencia, viewModel)
+                3 -> EvidenciaContent(
                     uuidReferencia = incidencia.uuidIncidencia,
                     viewModel = evidenciaViewModel,
                     modifier = Modifier.fillMaxSize()
                 )
+                4 -> KitsTab(incidencia, afectados, kitViewModel)
             }
         }
     }
@@ -167,6 +188,51 @@ fun RealizarActividadScreen(
     // ── Mapa de ubicación ─────────────────────────────────────────────────────
     if (showMapSheet) {
         UbicacionMapSheet(incidencia = incidencia, onDismiss = { showMapSheet = false })
+    }
+
+    // ── Finalizar Recopilación ────────────────────────────────────────────────
+    if (showFinalizarDialog) {
+        AlertDialog(
+            onDismissRequest = { showFinalizarDialog = false },
+            icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = GREEN, modifier = Modifier.size(32.dp)) },
+            title = { Text("Finalizar Recopilación", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("¿Confirmas que completaste la recopilación de datos?")
+                    Text(
+                        "El estado cambiará a DATA RECOPILADA y se sincronizará automáticamente.",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFinalizarDialog = false
+                        viewModel.finalizarRecopilacion(incidencia) { ok, message ->
+                            Toast.makeText(
+                                context,
+                                if (ok) {
+                                    "Recopilación finalizada."
+                                } else {
+                                    message ?: "No se pudo finalizar la recopilación."
+                                },
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFinalizarDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 
@@ -1222,7 +1288,7 @@ private fun SeguimientoItem(seguimiento: SeguimientoLocal) {
         }
     }
 }
-// (AfectadoCard fue reemplazada por PersonaRow / FamiliaGrupoCord en el tab Familias.)
+// (AfectadoCard fue reemplazada por PersonaRow / FamiliaGrupoCard en el tab Familias.)
 
 @Composable
 private fun InitialsAvatar(name: String, color: Color, size: Int = 36) {
@@ -1929,6 +1995,726 @@ private fun UbicacionDetalle(label: String, valor: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF1A1A1A))
         Text(valor, fontSize = 13.sp, color = Color(0xFF555555), lineHeight = 18.sp)
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAB OBSERVACIONES
+// ════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun ObservacionesTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
+    val observaciones by viewModel.getObservaciones(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+    var showDialog by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
+        if (observaciones.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Notes, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Text("Sin observaciones registradas", color = Color.Gray, fontSize = 14.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(observaciones) { obs ->
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp), tint = GREEN)
+                                Text(incidencia.responsable, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = GREEN)
+                                Spacer(modifier = Modifier.weight(1f))
+                                Surface(shape = RoundedCornerShape(4.dp), color = if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)) {
+                                    Text(
+                                        if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) "Sincronizado" else "Pendiente",
+                                        fontSize = 10.sp,
+                                        color = if (obs.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(obs.textoObservacion, fontSize = 14.sp, lineHeight = 20.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = GREEN,
+            contentColor = Color.White
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Agregar observación")
+        }
+    }
+
+    if (showDialog) {
+        AgregarObservacionDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = { texto ->
+                val textoLimpio = texto.trim()
+                val ahora = System.currentTimeMillis()
+                val actual = incidencia.observacionesCampo ?: ""
+                val nuevo = if (actual.isBlank()) textoLimpio else "$actual\n$textoLimpio"
+                viewModel.guardarIncidencia(incidencia.copy(observacionesCampo = nuevo, fechaUltimaModificacion = ahora))
+                viewModel.guardarObservacion(
+                    pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal(
+                        uuidObservacion = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        textoObservacion = textoLimpio,
+                        fechaRegistro = ahora.toString(),
+                        estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                    )
+                )
+                showDialog = false
+            }
+        )
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAB EVIDENCIAS
+// ════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val evidencias by viewModel.getEvidencias(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+    var showSheet by remember { mutableStateOf(false) }
+
+    val cameraImageUri = remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraImageUri.value?.let { uri ->
+            viewModel.guardarEvidencia(
+                pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                    uuidEvidencia = UUID.randomUUID().toString(),
+                    uuidReferencia = incidencia.uuidIncidencia,
+                    nombreArchivo = "foto_${System.currentTimeMillis()}.jpg",
+                    contentType = "image/jpeg",
+                    rutaLocal = uri.toString(),
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                )
+            )
+        }
+        showSheet = false
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()) { uris ->
+        uris.forEach { uri ->
+            viewModel.guardarEvidencia(
+                pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                    uuidEvidencia = UUID.randomUUID().toString(),
+                    uuidReferencia = incidencia.uuidIncidencia,
+                    nombreArchivo = "imagen_${System.currentTimeMillis()}.jpg",
+                    contentType = "image/jpeg",
+                    rutaLocal = uri.toString(),
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                )
+            )
+        }
+        showSheet = false
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                java.io.File.createTempFile("IMG_", ".jpg", context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES))
+            )
+            cameraImageUri.value = uri
+            cameraLauncher.launch(uri)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
+        if (evidencias.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Text("Sin evidencias registradas", color = Color.Gray, fontSize = 14.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(evidencias) { ev ->
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(1.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(
+                                when {
+                                    ev.contentType?.startsWith("image/") == true -> Icons.Default.Image
+                                    ev.contentType?.startsWith("audio/") == true -> Icons.Default.AudioFile
+                                    else -> Icons.Default.Description
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = GREEN
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(ev.nombreArchivo ?: "Archivo", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(ev.contentType ?: "archivo", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Surface(shape = RoundedCornerShape(4.dp), color = if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)) {
+                                Text(
+                                    if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) "Sync" else "Pendiente",
+                                    fontSize = 10.sp,
+                                    color = if (ev.estadoSync == pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.SINCRONIZADO) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = { showSheet = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = GREEN,
+            contentColor = Color.White
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+        }
+    }
+
+    if (showSheet) {
+        @OptIn(ExperimentalMaterial3Api::class)
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showSheet = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Agregar Evidencia", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.CameraAlt, null, tint = GREEN) }, label = "Tomar Foto", description = "Usa la cámara del dispositivo") {
+                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                }
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.Image, null, tint = GREEN) }, label = "Galería", description = "Selecciona imágenes") {
+                    galleryLauncher.launch("image/*")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EvidenciaOptionCard(icon: @Composable () -> Unit, label: String, description: String, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth(), onClick = onClick, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            icon()
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(label, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// ── Kits Tab ─────────────────────────────────────────────────────────────────
+
+private val TIPOS_KIT = listOf(
+    "Kit de Alimentos", "Kit de Higiene", "Kit de Abrigo",
+    "Kit de Cocina", "Kit Escolar", "Colchoneta", "Frazada", "Otro"
+)
+
+@Composable
+private fun KitsTab(
+    incidencia: IncidenciaLocal,
+    afectados: List<AfectadoLocal>,
+    kitViewModel: KitViewModel
+) {
+    val kitsAsignados by kitViewModel
+        .getKitsAsignadosPorIncidencia(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+
+    if (kitsAsignados.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF5F5F5)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(24.dp)
+            ) {
+                Icon(
+                    Icons.Default.Inventory2,
+                    contentDescription = null,
+                    modifier = Modifier.size(56.dp),
+                    tint = Color.LightGray
+                )
+                Text(
+                    "Aún no hay kits asignados",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    "La asignación debe realizarla el Especialista GRD desde la revisión del caso.",
+                    color = Color.Gray,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF5F5F5)),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                "Kits asignados por el especialista",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "Confirma los artículos entregados y registra la evidencia de entrega.",
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+
+        items(kitsAsignados, key = { it.uuidKitAsignado }) { kit ->
+            KitAsignadoCard(
+                kit = kit,
+                kitViewModel = kitViewModel
+            )
+        }
+    }
+}
+@Composable
+private fun KitAsignadoCard(
+    kit: KitAsignadoLocal,
+    kitViewModel: KitViewModel
+) {
+    val articulos by kitViewModel
+        .getArticulosPorKit(kit.uuidKitAsignado)
+        .collectAsState(initial = emptyList())
+
+    var descripcionEntrega by remember { mutableStateOf(kit.descripcionEntrega ?: "") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    Icons.Default.Inventory2,
+                    contentDescription = null,
+                    tint = GREEN
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        kit.tipoKit,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        kit.nombreFamilia ?: "Familia / persona asignada",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = when (kit.estadoEntrega) {
+                        "ENTREGADO" -> Color(0xFFE8F5E9)
+                        "PARCIAL" -> Color(0xFFFFF3E0)
+                        else -> Color(0xFFF3F4F6)
+                    }
+                ) {
+                    Text(
+                        kit.estadoEntrega,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = when (kit.estadoEntrega) {
+                            "ENTREGADO" -> Color(0xFF2E7D32)
+                            "PARCIAL" -> Color(0xFFE65100)
+                            else -> Color.Gray
+                        }
+                    )
+                }
+            }
+
+            if (articulos.isEmpty()) {
+                Text(
+                    "Este kit no tiene artículos cargados.",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    articulos.forEach { articulo ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (articulo.confirmado) Color(0xFFE8F5E9) else Color.Transparent,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = articulo.confirmado,
+                                onCheckedChange = { checked ->
+                                    kitViewModel.actualizarConfirmacionArticulo(
+                                        articulo = articulo,
+                                        confirmado = checked
+                                    )
+                                }
+                            )
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    articulo.descripcion,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    articulo.codigo,
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
+                            Text(
+                                "x${articulo.cantidadAsignada}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = descripcionEntrega,
+                onValueChange = { descripcionEntrega = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Descripción de entrega") },
+                placeholder = {
+                    Text("Describe observaciones de la entrega...")
+                },
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        kitViewModel.marcarKitEntregado(
+                            kit = kit,
+                            descripcionEntrega = descripcionEntrega,
+                            evidenciaLocalUri = null,
+                            estadoEntrega = "PARCIAL"
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Guardar parcial")
+                }
+
+                Button(
+                    onClick = {
+                        kitViewModel.confirmarKitCompleto(
+                            kit = kit,
+                            descripcionEntrega = descripcionEntrega
+
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Text("Marcar entregado")
+                }
+            }
+        }
+    }
+}
+@Composable
+private fun EntregaKitCard(entrega: EntregaKitLocal, nombreAfectado: String) {
+    val sincronizado = entrega.estadoSync == EstadoSync.SINCRONIZADO
+    val esParcial = entrega.kitEntregado.contains("PARCIAL", ignoreCase = true)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = GREEN.copy(alpha = 0.1f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Inventory2, contentDescription = null, tint = GREEN, modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    Column {
+                        Text(
+                            entrega.kitEntregado.replace(" (COMPLETA)", "").replace(" (PARCIAL)", ""),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Text("Cantidad: ${entrega.cantidad}", fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (esParcial) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)
+                    ) {
+                        Text(
+                            if (esParcial) "Parcial" else "Completa",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (esParcial) Color(0xFFE65100) else Color(0xFF2E7D32),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (sincronizado) Color(0xFFE8F5E9) else Color(0xFFFFF8E1)
+                    ) {
+                        Text(
+                            if (sincronizado) "✓ Sync" else "Pendiente",
+                            fontSize = 10.sp,
+                            color = if (sincronizado) Color(0xFF2E7D32) else Color(0xFFF57F17),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = Color(0xFFF0F0F0))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                Text(nombreAfectado, fontSize = 12.sp, color = Color.Gray)
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                Text(
+                    SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(entrega.fechaEntrega)),
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NuevaEntregaDialog(
+    afectados: List<AfectadoLocal>,
+    uuidIncidencia: String,
+    idIncidenciaRemota: String?,
+    onDismiss: () -> Unit,
+    onConfirmar: (EntregaKitLocal) -> Unit
+) {
+    var afectadoSeleccionado by remember { mutableStateOf(afectados.firstOrNull()) }
+    var kitSeleccionado by remember { mutableStateOf(TIPOS_KIT[0]) }
+    var cantidad by remember { mutableIntStateOf(1) }
+    var tipoEntrega by remember { mutableStateOf("COMPLETA") }
+    var afectadoExpanded by remember { mutableStateOf(false) }
+    var kitExpanded by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar Entrega de Kit", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                // Seleccionar afectado
+                if (afectados.isEmpty()) {
+                    Text(
+                        "No hay afectados registrados en esta incidencia.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    ExposedDropdownMenuBox(
+                        expanded = afectadoExpanded,
+                        onExpandedChange = { afectadoExpanded = !afectadoExpanded }
+                    ) {
+                        OutlinedTextField(
+                            value = afectadoSeleccionado?.let {
+                                "${it.nombres} ${it.apellidoPaterno ?: ""}".trim()
+                            } ?: "Seleccionar afectado",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Afectado") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = afectadoExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = afectadoExpanded,
+                            onDismissRequest = { afectadoExpanded = false }
+                        ) {
+                            afectados.forEach { afectado ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("${afectado.nombres} ${afectado.apellidoPaterno ?: ""}".trim(), fontSize = 14.sp)
+                                            Text(afectado.documentoIdentidad, fontSize = 11.sp, color = Color.Gray)
+                                        }
+                                    },
+                                    onClick = {
+                                        afectadoSeleccionado = afectado
+                                        afectadoExpanded = false
+                                        errorMsg = ""
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Tipo de kit
+                ExposedDropdownMenuBox(
+                    expanded = kitExpanded,
+                    onExpandedChange = { kitExpanded = !kitExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = kitSeleccionado,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Tipo de Kit") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = kitExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(expanded = kitExpanded, onDismissRequest = { kitExpanded = false }) {
+                        TIPOS_KIT.forEach { kit ->
+                            DropdownMenuItem(
+                                text = { Text(kit) },
+                                onClick = { kitSeleccionado = kit; kitExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                // Cantidad
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Cantidad:", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    IconButton(onClick = { if (cantidad > 1) cantidad-- }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Remove, contentDescription = null, tint = GREEN)
+                    }
+                    Text(cantidad.toString(), fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 32.dp))
+                    IconButton(onClick = { cantidad++ }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = GREEN)
+                    }
+                }
+
+                // Completa / Parcial
+                Text("Tipo de entrega:", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("COMPLETA", "PARCIAL").forEach { tipo ->
+                        FilterChip(
+                            selected = tipoEntrega == tipo,
+                            onClick = { tipoEntrega = tipo },
+                            label = { Text(tipo, fontSize = 13.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = if (tipo == "COMPLETA") GREEN else Color(0xFFE65100),
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                if (errorMsg.isNotEmpty()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (afectadoSeleccionado == null) { errorMsg = "Selecciona un afectado"; return@Button }
+                    onConfirmar(
+                        EntregaKitLocal(
+                            uuidEntrega        = UUID.randomUUID().toString(),
+                            uuidAfectado       = afectadoSeleccionado!!.uuidAfectado,
+                            uuidIncidencia     = uuidIncidencia,
+                            idIncidenciaRemota = idIncidenciaRemota,
+                            kitEntregado       = "$kitSeleccionado ($tipoEntrega)",
+                            cantidad           = cantidad,
+                            fechaEntrega       = System.currentTimeMillis(),
+                            estadoSync         = EstadoSync.NUEVO
+                        )
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = GREEN),
+                enabled = afectados.isNotEmpty()
+            ) { Text("Confirmar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+private fun KitResumenChip(label: String, count: Int, color: Color) {
+    Surface(shape = RoundedCornerShape(8.dp), color = color.copy(alpha = 0.1f)) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(count.toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = color)
+            Text(label, fontSize = 12.sp, color = color)
+        }
     }
 }
 

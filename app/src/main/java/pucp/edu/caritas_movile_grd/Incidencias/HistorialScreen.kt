@@ -192,16 +192,16 @@ private fun StatusSummaryCard(
             ) {
                 // Ícono en badge cuadrado (igual que web)
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = iconBg,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -237,9 +237,6 @@ fun GRDScreen(
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
 
-    LaunchedEffect(Unit) {
-        viewModel.refrescarIncidenciasAsignadas()
-    }
     var searchQuery       by remember { mutableStateOf("") }
     var statusFilter      by remember { mutableStateOf<String?>(null) }
     var categoriaExpanded by remember { mutableStateOf(false) }

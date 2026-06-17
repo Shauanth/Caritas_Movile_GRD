@@ -1,4 +1,5 @@
 package pucp.edu.caritas_movile_grd.Incidencias
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,12 @@ interface IncidenciaDao {
 
     @Query("DELETE FROM afectado_local WHERE familiaId = :familiaId")
     suspend fun eliminarAfectadosDeFamilia(familiaId: String)
+
+    @Update
+    suspend fun updateAfectado(afectado: AfectadoLocal)
+
+    @Delete
+    suspend fun deleteAfectado(afectado: AfectadoLocal)
 
     // ── Grupos familiares ─────────────────────────────────────────────────────
     @Query("SELECT * FROM grupo_familiar_local WHERE uuidIncidencia = :uuidIncidencia")
@@ -71,5 +78,15 @@ interface IncidenciaDao {
         WHERE uuidIncidencia = :uuidIncidencia
         ORDER BY fechaSeguimiento DESC
     """)
-    fun getSeguimientosByIncidencia(uuidIncidencia: String): Flow<List<SeguimientoLocal>>    
+    fun getSeguimientosByIncidencia(uuidIncidencia: String): Flow<List<SeguimientoLocal>>
+
+    @Query("""
+        SELECT * FROM evidencia_local
+        WHERE uuidReferencia = :uuidIncidencia
+        ORDER BY rowid DESC
+    """)
+    fun getEvidenciasByIncidencia(uuidIncidencia: String): Flow<List<EvidenciaLocal>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvidencia(evidencia: EvidenciaLocal)
 }

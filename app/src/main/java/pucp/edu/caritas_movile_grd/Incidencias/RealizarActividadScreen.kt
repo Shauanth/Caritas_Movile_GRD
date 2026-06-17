@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -639,6 +640,7 @@ private data class FamiliaUI(
     val familiaId: String?,                 // null = afectados sin familia asignada
     val nombre: String,
     val comentario: String?,
+    val verificado: Boolean,                // empadronamiento confirmado en campo
     val familiaLocal: FamiliaLocal?,        // entidad persistida (si existe)
     val miembros: List<AfectadoLocal>
 )
@@ -676,6 +678,7 @@ private fun FamiliasTab(
                     familiaId = fam.familiaId,
                     nombre = fam.nombreReferencia,
                     comentario = fam.comentario,
+                    verificado = fam.verificado,
                     familiaLocal = fam,
                     miembros = porFamiliaId[fam.familiaId] ?: emptyList()
                 )
@@ -691,13 +694,14 @@ private fun FamiliasTab(
                         nombre = miembros.firstOrNull()?.familiaNombre?.takeIf { it.isNotBlank() }
                             ?: "Grupo familiar",
                         comentario = null,
+                        verificado = false,
                         familiaLocal = null,
                         miembros = miembros
                     )
                 )
             }
         (porFamiliaId[null] ?: emptyList()).takeIf { it.isNotEmpty() }?.let {
-            add(FamiliaUI(null, "Sin familia asignada", null, null, it))
+            add(FamiliaUI(null, "Sin familia asignada", null, false, null, it))
         }
     }
 
@@ -780,6 +784,19 @@ private fun FamiliasTab(
                             onEditarComentario = fam.familiaId?.let { { editandoComentario = fam } },
                             onAgregarMiembro = fam.familiaId?.let { id ->
                                 { familiaParaAgregar = id to fam.nombre }
+                            },
+                            onToggleVerificado = fam.familiaId?.let { famId ->
+                                { nuevo ->
+                                    val base = fam.familiaLocal ?: FamiliaLocal(
+                                        familiaId = famId,
+                                        uuidIncidencia = incidencia.uuidIncidencia,
+                                        nombreReferencia = fam.nombre,
+                                        comentario = fam.comentario,
+                                        estadoSync = if (fam.miembros.any { it.estadoSync == EstadoSync.SINCRONIZADO })
+                                            EstadoSync.SINCRONIZADO else EstadoSync.NUEVO
+                                    )
+                                    viewModel.guardarFamilia(base.copy(verificado = nuevo))
+                                }
                             },
                             onEditarMiembro = { editandoAfectado = it },
                             onEliminarMiembro = { borrandoAfectado = it }
@@ -895,6 +912,7 @@ private fun FamiliaCard(
     miembros: List<AfectadoLocal>,
     onEditarComentario: (() -> Unit)?,
     onAgregarMiembro: (() -> Unit)?,
+    onToggleVerificado: ((Boolean) -> Unit)?,
     onEditarMiembro: (AfectadoLocal) -> Unit,
     onEliminarMiembro: (AfectadoLocal) -> Unit
 ) {
@@ -915,6 +933,36 @@ private fun FamiliaCard(
                 if (onEditarComentario != null) {
                     IconButton(onClick = onEditarComentario, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Default.Comment, contentDescription = "Comentario de familia", tint = GREEN, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            // Verificación de empadronamiento en campo
+            if (onToggleVerificado != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (familia.verificado) Color(0xFFE8F5E9) else Color(0xFFF3F4F6),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleVerificado(!familia.verificado) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            if (familia.verificado) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (familia.verificado) GREEN else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (familia.verificado) "Familia verificada en campo" else "Marcar familia como verificada",
+                            fontSize = 13.sp,
+                            fontWeight = if (familia.verificado) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (familia.verificado) Color(0xFF2E7D32) else Color.Gray
+                        )
                     }
                 }
             }

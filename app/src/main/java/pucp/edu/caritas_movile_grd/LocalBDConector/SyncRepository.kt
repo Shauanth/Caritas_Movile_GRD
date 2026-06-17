@@ -713,6 +713,9 @@ class SyncRepository(
                         uuidIncidencia   = uuidIncidencia,
                         nombreReferencia = familiaNombre ?: "Grupo Familiar ${g + 1}",
                         comentario       = grupo.optString("observaciones").takeIf { it.isNotBlank() && it != "null" },
+                        direccion        = grupo.optString("direccion").takeIf { it.isNotBlank() && it != "null" },
+                        condicionVivienda = grupo.optString("condicionVivienda").takeIf { it.isNotBlank() && it != "null" },
+                        verificado       = grupo.optString("condicionFinal").equals("VERIFICADO", ignoreCase = true),
                         idFamiliaRemota  = familiaId,
                         estadoSync       = EstadoSync.SINCRONIZADO
                     )
@@ -789,7 +792,10 @@ class SyncRepository(
                     incidencia = incidencia,
                     idIncidenciaRemota = idIncidenciaRemota,
                     codigoCasoRemoto = codigoCasoRemoto,
-                    comentarioGrupo = familia?.comentario
+                    comentarioGrupo = familia?.comentario,
+                    direccionGrupo = familia?.direccion,
+                    condicionViviendaGrupo = familia?.condicionVivienda,
+                    grupoVerificado = familia?.verificado == true
                 )
             )
 
@@ -1020,7 +1026,10 @@ private fun AfectadoLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
     idIncidenciaRemota: String,
     codigoCasoRemoto: String?,
-    comentarioGrupo: String? = null
+    comentarioGrupo: String? = null,
+    direccionGrupo: String? = null,
+    condicionViviendaGrupo: String? = null,
+    grupoVerificado: Boolean = false
 ): JSONObject {
     val apellidos = listOfNotNull(
         apellidoPaterno?.takeIf { it.isNotBlank() },
@@ -1046,6 +1055,9 @@ private fun AfectadoLocal.toMobilePayload(
         put("codigoGrupo", codigoGrupo)
         put("nombreReferencia", nombreReferencia)
         putNullable("observacionesGrupo", comentarioGrupo?.takeIf { it.isNotBlank() })
+        putNullable("direccion", direccionGrupo?.takeIf { it.isNotBlank() })
+        putNullable("condicionVivienda", condicionViviendaGrupo?.takeIf { it.isNotBlank() })
+        putNullable("condicionFinal", if (grupoVerificado) "VERIFICADO" else null)
 
         put("tipoDocumento", idCatalogoDoc.toString())
         put("documentoIdentidad", documentoIdentidad)

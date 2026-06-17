@@ -18,6 +18,15 @@ data class FamiliaLocal(
     val uuidIncidencia: String,
     val nombreReferencia: String,
     val comentario: String? = null,             // = GrupoFamiliarAfectado.observaciones (web)
+    val direccion: String? = null,              // = GrupoFamiliarAfectado.direccion (web)
+    val condicionVivienda: String? = null,      // = GrupoFamiliarAfectado.condicionVivienda (web)
+    /**
+     * Verificación de empadronamiento en campo: el brigadista confirma que validó
+     * los datos de la familia en el terreno. Sube al backend como
+     * `GrupoFamiliarAfectado.condicionFinal = "VERIFICADO"`. Es independiente de
+     * [estadoSync] (que refleja la sincronización, no la verificación).
+     */
+    val verificado: Boolean = false,
     val idFamiliaRemota: String? = null,        // idGrupoFamiliar remoto cuando ya se sincronizó
     val estadoSync: EstadoSync = EstadoSync.NUEVO,
     val fechaUltimaModificacion: Long = System.currentTimeMillis()

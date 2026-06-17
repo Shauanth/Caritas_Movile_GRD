@@ -383,6 +383,10 @@ private fun JSONObject.toFamiliasLocalesAsignadas(
                 nombreReferencia = grupo.optStringOrNull("nombreReferencia")
                     ?: "Grupo Familiar ${i + 1}",
                 comentario = grupo.optStringOrNull("observaciones"),
+                direccion = grupo.optStringOrNull("direccion"),
+                condicionVivienda = grupo.optStringOrNull("condicionVivienda"),
+                verificado = grupo.optStringOrNull("condicionFinal")
+                    ?.equals("VERIFICADO", ignoreCase = true) == true,
                 idFamiliaRemota = grupo.optStringOrNull("idGrupoFamiliar"),
                 estadoSync = EstadoSync.SINCRONIZADO
             )

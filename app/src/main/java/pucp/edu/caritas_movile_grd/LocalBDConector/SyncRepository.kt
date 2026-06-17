@@ -696,6 +696,7 @@ class SyncRepository(
 
         // Descargar afectados/familias del servidor (registrados desde web)
         val afectadosServidor = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal>()
+        val familiasServidor = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.FamiliaLocal>()
         for (i in 0 until items.length()) {
             val wrapper = items.optJSONObject(i) ?: continue
             val inc = wrapper.optJSONObject("incidencia") ?: continue
@@ -706,6 +707,19 @@ class SyncRepository(
                 val grupo = grupos.optJSONObject(g) ?: continue
                 val familiaId = grupo.optString("idGrupoFamiliar").takeIf { it.isNotBlank() } ?: continue
                 val familiaNombre = grupo.optString("nombreReferencia").takeIf { it.isNotBlank() }
+                familiasServidor.add(
+                    pucp.edu.caritas_movile_grd.Incidencias.FamiliaLocal(
+                        familiaId        = familiaId,
+                        uuidIncidencia   = uuidIncidencia,
+                        nombreReferencia = familiaNombre ?: "Grupo Familiar ${g + 1}",
+                        comentario       = grupo.optString("observaciones").takeIf { it.isNotBlank() && it != "null" },
+                        direccion        = grupo.optString("direccion").takeIf { it.isNotBlank() && it != "null" },
+                        condicionVivienda = grupo.optString("condicionVivienda").takeIf { it.isNotBlank() && it != "null" },
+                        verificado       = grupo.optString("condicionFinal").equals("VERIFICADO", ignoreCase = true),
+                        idFamiliaRemota  = familiaId,
+                        estadoSync       = EstadoSync.SINCRONIZADO
+                    )
+                )
                 val personas = grupo.optJSONArray("personas") ?: continue
                 for (p in 0 until personas.length()) {
                     val persona = personas.optJSONObject(p) ?: continue
@@ -743,6 +757,11 @@ class SyncRepository(
             syncDao.insertAfectadosIfNotExists(afectadosServidor)
             Log.d("SyncRepository", "Descargados ${afectadosServidor.size} afectados del servidor")
         }
+        if (familiasServidor.isNotEmpty()) {
+            // IGNORE: preserva comentarios editados localmente (NUEVO/EDITADO)
+            syncDao.insertFamiliasIfNotExists(familiasServidor)
+            Log.d("SyncRepository", "Descargadas ${familiasServidor.size} familias del servidor")
+        }
 
         // Eliminar localmente evidencias SINCRONIZADAS que el servidor ya no devuelve (fueron borradas en web)
         val evidenciasPorIncidencia = evidenciasServidor.groupBy { it.uuidReferencia }
@@ -763,11 +782,20 @@ class SyncRepository(
         errores: MutableList<String>
     ): Boolean {
         return try {
+            // Comentario por familia (GrupoFamiliarAfectado.observaciones en la web)
+            val familia = afectado.familiaId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { syncDao.getFamiliaPorId(it) }
+
             val responseAfectado = mobileSyncApi.sincronizarAfectado(
                 afectado.toMobilePayload(
                     incidencia = incidencia,
                     idIncidenciaRemota = idIncidenciaRemota,
-                    codigoCasoRemoto = codigoCasoRemoto
+                    codigoCasoRemoto = codigoCasoRemoto,
+                    comentarioGrupo = familia?.comentario,
+                    direccionGrupo = familia?.direccion,
+                    condicionViviendaGrupo = familia?.condicionVivienda,
+                    grupoVerificado = familia?.verificado == true
                 )
             )
 
@@ -784,6 +812,16 @@ class SyncRepository(
                     uuidAfectado = afectado.uuidAfectado,
                     idRemoto = idAfectadoRemoto
                 )
+
+                // El grupo familiar quedó sincronizado junto con su integrante
+                familia?.let {
+                    val idGrupoRemoto = responseAfectado.optString("idGrupoFamiliarRemoto", "")
+                        .takeIf { id -> id.isNotBlank() }
+                    syncDao.marcarFamiliaComoSincronizada(
+                        familiaId = it.familiaId,
+                        idRemoto = idGrupoRemoto ?: it.idFamiliaRemota
+                    )
+                }
 
                 true
             }
@@ -987,7 +1025,11 @@ private fun IncidenciaLocal.toMobilePayload(): JSONObject {
 private fun AfectadoLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
     idIncidenciaRemota: String,
-    codigoCasoRemoto: String?
+    codigoCasoRemoto: String?,
+    comentarioGrupo: String? = null,
+    direccionGrupo: String? = null,
+    condicionViviendaGrupo: String? = null,
+    grupoVerificado: Boolean = false
 ): JSONObject {
     val apellidos = listOfNotNull(
         apellidoPaterno?.takeIf { it.isNotBlank() },
@@ -1012,6 +1054,10 @@ private fun AfectadoLocal.toMobilePayload(
 
         put("codigoGrupo", codigoGrupo)
         put("nombreReferencia", nombreReferencia)
+        putNullable("observacionesGrupo", comentarioGrupo?.takeIf { it.isNotBlank() })
+        putNullable("direccion", direccionGrupo?.takeIf { it.isNotBlank() })
+        putNullable("condicionVivienda", condicionViviendaGrupo?.takeIf { it.isNotBlank() })
+        putNullable("condicionFinal", if (grupoVerificado) "VERIFICADO" else null)
 
         put("tipoDocumento", idCatalogoDoc.toString())
         put("documentoIdentidad", documentoIdentidad)

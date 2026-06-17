@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -634,6 +635,16 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
 // TAB FAMILIAS
 // ════════════════════════════════════════════════════════════════════════════
 
+// Modelo de presentación de una familia agrupada en la pestaña Familias
+private data class FamiliaUI(
+    val familiaId: String?,                 // null = afectados sin familia asignada
+    val nombre: String,
+    val comentario: String?,
+    val verificado: Boolean,                // empadronamiento confirmado en campo
+    val familiaLocal: FamiliaLocal?,        // entidad persistida (si existe)
+    val miembros: List<AfectadoLocal>
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FamiliasTab(
@@ -641,17 +652,60 @@ private fun FamiliasTab(
     afectados: List<AfectadoLocal>,
     viewModel: IncidenciaViewModel
 ) {
+    val familias by viewModel.getFamilias(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+
     var filtro by remember { mutableStateOf("Todos") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var familiaParaAgregar by remember { mutableStateOf<Pair<String, String>?>(null) }
     var editandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
     var borrandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
+    var editandoComentario by remember { mutableStateOf<FamiliaUI?>(null) }
     val filtros = listOf("Todos", "Pendientes", "Confirmados")
 
-    val afectadosFiltrados = when (filtro) {
-        "Pendientes"  -> afectados.filter { it.estadoSync == EstadoSync.NUEVO || it.estadoSync == EstadoSync.EDITADO }
-        "Confirmados" -> afectados.filter { it.estadoSync == EstadoSync.SINCRONIZADO }
-        else          -> afectados
+    fun coincideFiltro(a: AfectadoLocal): Boolean = when (filtro) {
+        "Pendientes"  -> a.estadoSync == EstadoSync.NUEVO || a.estadoSync == EstadoSync.EDITADO
+        "Confirmados" -> a.estadoSync == EstadoSync.SINCRONIZADO
+        else          -> true
     }
+
+    // Agrupar: familias declaradas (entidad) + implícitas (en afectados) + sin familia
+    val porFamiliaId = afectados.groupBy { it.familiaId?.takeIf { id -> id.isNotBlank() } }
+    val buckets = buildList {
+        familias.forEach { fam ->
+            add(
+                FamiliaUI(
+                    familiaId = fam.familiaId,
+                    nombre = fam.nombreReferencia,
+                    comentario = fam.comentario,
+                    verificado = fam.verificado,
+                    familiaLocal = fam,
+                    miembros = porFamiliaId[fam.familiaId] ?: emptyList()
+                )
+            )
+        }
+        porFamiliaId.keys.filterNotNull()
+            .filter { id -> familias.none { it.familiaId == id } }
+            .forEach { id ->
+                val miembros = porFamiliaId[id] ?: emptyList()
+                add(
+                    FamiliaUI(
+                        familiaId = id,
+                        nombre = miembros.firstOrNull()?.familiaNombre?.takeIf { it.isNotBlank() }
+                            ?: "Grupo familiar",
+                        comentario = null,
+                        verificado = false,
+                        familiaLocal = null,
+                        miembros = miembros
+                    )
+                )
+            }
+        (porFamiliaId[null] ?: emptyList()).takeIf { it.isNotEmpty() }?.let {
+            add(FamiliaUI(null, "Sin familia asignada", null, false, null, it))
+        }
+    }
+
+    val totalFamilias = buckets.count { it.familiaId != null }
 
     Column(
         modifier = Modifier
@@ -682,7 +736,7 @@ private fun FamiliasTab(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // ── Header conteo ────────────────────────────────────────────────
             item {
@@ -692,20 +746,19 @@ private fun FamiliasTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Personas (${afectadosFiltrados.size})",
+                        "Familias ($totalFamilias)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
                     Text(
-                        "${afectados.size} en total",
+                        "${afectados.size} personas en total",
                         fontSize = 13.sp,
                         color = Color.Gray
                     )
                 }
             }
 
-            // ── Lista de afectados ───────────────────────────────────────────
-            if (afectadosFiltrados.isEmpty()) {
+            if (buckets.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -714,7 +767,7 @@ private fun FamiliasTab(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Sin personas registradas",
+                            "Sin familias registradas",
                             color = Color.Gray,
                             fontSize = 14.sp,
                             textAlign = TextAlign.Center
@@ -722,52 +775,118 @@ private fun FamiliasTab(
                     }
                 }
             } else {
-                items(afectadosFiltrados) { afectado ->
-                    AfectadoCard(
-                        afectado = afectado,
-                        onEdit = { editandoAfectado = afectado },
-                        onDelete = { borrandoAfectado = afectado }
-                    )
+                items(buckets, key = { it.familiaId ?: "__sin_familia__" }) { fam ->
+                    val miembrosFiltrados = fam.miembros.filter { coincideFiltro(it) }
+                    if (filtro == "Todos" || miembrosFiltrados.isNotEmpty()) {
+                        FamiliaCard(
+                            familia = fam,
+                            miembros = miembrosFiltrados,
+                            onEditarComentario = fam.familiaId?.let { { editandoComentario = fam } },
+                            onAgregarMiembro = fam.familiaId?.let { id ->
+                                { familiaParaAgregar = id to fam.nombre }
+                            },
+                            onToggleVerificado = fam.familiaId?.let { famId ->
+                                { nuevo ->
+                                    val base = fam.familiaLocal ?: FamiliaLocal(
+                                        familiaId = famId,
+                                        uuidIncidencia = incidencia.uuidIncidencia,
+                                        nombreReferencia = fam.nombre,
+                                        comentario = fam.comentario,
+                                        estadoSync = if (fam.miembros.any { it.estadoSync == EstadoSync.SINCRONIZADO })
+                                            EstadoSync.SINCRONIZADO else EstadoSync.NUEVO
+                                    )
+                                    viewModel.guardarFamilia(base.copy(verificado = nuevo))
+                                }
+                            },
+                            onEditarMiembro = { editandoAfectado = it },
+                            onEliminarMiembro = { borrandoAfectado = it }
+                        )
+                    }
                 }
             }
 
-            // ── Botón agregar ────────────────────────────────────────────────
+            // ── Nueva persona / familia ──────────────────────────────────────
             item {
-                TextButton(
+                OutlinedButton(
                     onClick = { showAddDialog = true },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GREEN)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar persona", color = GREEN, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Default.GroupAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Agregar persona / familia", fontWeight = FontWeight.Medium)
                 }
             }
         }
     }
 
+    // Agregar persona (selector de familia libre)
     if (showAddDialog) {
         AgregarPersonaDialog(
             uuidIncidencia = incidencia.uuidIncidencia,
+            familias = familias,
             onDismiss = { showAddDialog = false },
-            onConfirm = { afectado ->
+            onConfirm = { afectado, familiaNueva ->
+                familiaNueva?.let { viewModel.guardarFamilia(it) }
                 viewModel.guardarAfectado(afectado)
                 showAddDialog = false
             }
         )
     }
 
+    // Agregar miembro a una familia específica
+    familiaParaAgregar?.let { (famId, famNombre) ->
+        AgregarPersonaDialog(
+            uuidIncidencia = incidencia.uuidIncidencia,
+            familias = familias,
+            familiaFija = famId to famNombre,
+            onDismiss = { familiaParaAgregar = null },
+            onConfirm = { afectado, familiaNueva ->
+                familiaNueva?.let { viewModel.guardarFamilia(it) }
+                viewModel.guardarAfectado(afectado)
+                familiaParaAgregar = null
+            }
+        )
+    }
+
+    // Editar persona
     editandoAfectado?.let { afectado ->
         AgregarPersonaDialog(
             uuidIncidencia = incidencia.uuidIncidencia,
+            familias = familias,
             afectadoInicial = afectado,
             onDismiss = { editandoAfectado = null },
-            onConfirm = { editado ->
+            onConfirm = { editado, familiaNueva ->
+                familiaNueva?.let { viewModel.guardarFamilia(it) }
                 viewModel.editarAfectado(editado.copy(uuidAfectado = afectado.uuidAfectado, idAfectadoRemoto = afectado.idAfectadoRemoto))
                 editandoAfectado = null
             }
         )
     }
 
+    // Comentario por familia
+    editandoComentario?.let { fam ->
+        fam.familiaId?.let { famId ->
+            AgregarComentarioFamiliaDialog(
+                nombreFamilia = fam.nombre,
+                comentarioInicial = fam.comentario ?: "",
+                onDismiss = { editandoComentario = null },
+                onConfirm = { texto ->
+                    val base = fam.familiaLocal ?: FamiliaLocal(
+                        familiaId = famId,
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        nombreReferencia = fam.nombre,
+                        estadoSync = if (fam.miembros.any { it.estadoSync == EstadoSync.SINCRONIZADO })
+                            EstadoSync.SINCRONIZADO else EstadoSync.NUEVO
+                    )
+                    viewModel.guardarFamilia(base.copy(comentario = texto.trim().ifBlank { null }))
+                    editandoComentario = null
+                }
+            )
+        }
+    }
+
+    // Eliminar persona
     borrandoAfectado?.let { afectado ->
         AlertDialog(
             onDismissRequest = { borrandoAfectado = null },
@@ -784,6 +903,155 @@ private fun FamiliasTab(
                 TextButton(onClick = { borrandoAfectado = null }) { Text("Cancelar") }
             }
         )
+    }
+}
+
+@Composable
+private fun FamiliaCard(
+    familia: FamiliaUI,
+    miembros: List<AfectadoLocal>,
+    onEditarComentario: (() -> Unit)?,
+    onAgregarMiembro: (() -> Unit)?,
+    onToggleVerificado: ((Boolean) -> Unit)?,
+    onEditarMiembro: (AfectadoLocal) -> Unit,
+    onEliminarMiembro: (AfectadoLocal) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Encabezado de familia
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.People, contentDescription = null, tint = GREEN)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(familia.nombre, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("${familia.miembros.size} integrante(s)", fontSize = 12.sp, color = Color.Gray)
+                }
+                if (onEditarComentario != null) {
+                    IconButton(onClick = onEditarComentario, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.Comment, contentDescription = "Comentario de familia", tint = GREEN, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            // Verificación de empadronamiento en campo
+            if (onToggleVerificado != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (familia.verificado) Color(0xFFE8F5E9) else Color(0xFFF3F4F6),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleVerificado(!familia.verificado) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            if (familia.verificado) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (familia.verificado) GREEN else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (familia.verificado) "Familia verificada en campo" else "Marcar familia como verificada",
+                            fontSize = 13.sp,
+                            fontWeight = if (familia.verificado) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (familia.verificado) Color(0xFF2E7D32) else Color.Gray
+                        )
+                    }
+                }
+            }
+
+            // Comentario de familia
+            if (!familia.comentario.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFF1F8E9),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Comment, contentDescription = null, tint = GREEN, modifier = Modifier.size(16.dp))
+                        Text(familia.comentario, fontSize = 13.sp, lineHeight = 18.sp, color = Color(0xFF33691E))
+                    }
+                }
+            } else if (onEditarComentario != null) {
+                TextButton(onClick = onEditarComentario, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = GREEN, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Agregar comentario de familia", color = GREEN, fontSize = 13.sp)
+                }
+            }
+
+            // Integrantes
+            if (miembros.isEmpty()) {
+                Text("Sin integrantes en este filtro.", fontSize = 12.sp, color = Color.Gray)
+            } else {
+                miembros.forEach { afectado ->
+                    AfectadoCard(
+                        afectado = afectado,
+                        onEdit = { onEditarMiembro(afectado) },
+                        onDelete = { onEliminarMiembro(afectado) }
+                    )
+                }
+            }
+
+            // Agregar miembro a esta familia
+            if (onAgregarMiembro != null) {
+                TextButton(onClick = onAgregarMiembro, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = GREEN, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Agregar integrante", color = GREEN, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgregarComentarioFamiliaDialog(
+    nombreFamilia: String,
+    comentarioInicial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var texto by remember { mutableStateOf(comentarioInicial) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Comentario de familia", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(nombreFamilia, fontSize = 13.sp, color = Color.Gray)
+
+            OutlinedTextField(
+                value = texto,
+                onValueChange = { texto = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Ej. Familia con adulto mayor, requiere atención prioritaria…") },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancelar") }
+                Button(
+                    onClick = { onConfirm(texto) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) { Text("Guardar") }
+            }
+        }
     }
 }
 
@@ -1259,13 +1527,18 @@ private fun iniciarGrabacion(recognizer: SpeechRecognizer, onStarted: () -> Unit
     onStarted()
 }
 
+private const val FAMILIA_NUEVA = "__NUEVA__"
+private const val FAMILIA_SIN = "__SIN__"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgregarPersonaDialog(
     uuidIncidencia: String,
+    familias: List<FamiliaLocal>,
     afectadoInicial: AfectadoLocal? = null,
+    familiaFija: Pair<String, String>? = null,   // (familiaId, nombre) -> sin selector
     onDismiss: () -> Unit,
-    onConfirm: (AfectadoLocal) -> Unit
+    onConfirm: (AfectadoLocal, FamiliaLocal?) -> Unit
 ) {
     val esEdicion = afectadoInicial != null
     var nombres by remember { mutableStateOf(afectadoInicial?.nombres ?: "") }
@@ -1273,6 +1546,34 @@ private fun AgregarPersonaDialog(
     var tipoDocIdx by remember { mutableIntStateOf(afectadoInicial?.idCatalogoDoc ?: 1) }
     var expanded by remember { mutableStateOf(false) }
     val tiposDoc = listOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
+
+    // Opciones de familia (id -> nombre). Incluye la familia actual del afectado si no está listada.
+    val opcionesFamilia = remember(familias, afectadoInicial) {
+        val base = familias.map { it.familiaId to it.nombreReferencia }.toMutableList()
+        val actual = afectadoInicial?.familiaId?.takeIf { it.isNotBlank() }
+        if (actual != null && base.none { it.first == actual }) {
+            base.add(0, actual to (afectadoInicial.familiaNombre ?: "Grupo familiar"))
+        }
+        base
+    }
+
+    var seleccionFamilia by remember {
+        mutableStateOf(
+            when {
+                familiaFija != null -> familiaFija.first
+                afectadoInicial?.familiaId?.isNotBlank() == true -> afectadoInicial.familiaId!!
+                else -> FAMILIA_NUEVA
+            }
+        )
+    }
+    var nombreNuevaFamilia by remember { mutableStateOf("") }
+    var familiaExpanded by remember { mutableStateOf(false) }
+
+    fun etiquetaSeleccion(): String = when (seleccionFamilia) {
+        FAMILIA_NUEVA -> "➕ Crear nueva familia"
+        FAMILIA_SIN -> "Sin asignar"
+        else -> opcionesFamilia.firstOrNull { it.first == seleccionFamilia }?.second ?: "Familia"
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -1292,6 +1593,73 @@ private fun AgregarPersonaDialog(
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
+
+            // ── Familia ───────────────────────────────────────────────────────
+            if (familiaFija != null) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF1F8E9),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.People, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
+                        Text("Familia: ${familiaFija.second}", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF33691E))
+                    }
+                }
+            } else {
+                ExposedDropdownMenuBox(
+                    expanded = familiaExpanded,
+                    onExpandedChange = { familiaExpanded = !familiaExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = etiquetaSeleccion(),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Familia") },
+                        leadingIcon = { Icon(Icons.Default.People, contentDescription = null, tint = GREEN) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(familiaExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = familiaExpanded,
+                        onDismissRequest = { familiaExpanded = false }
+                    ) {
+                        opcionesFamilia.forEach { (id, nombre) ->
+                            if (id != null) {
+                                DropdownMenuItem(
+                                    text = { Text(nombre) },
+                                    onClick = { seleccionFamilia = id; familiaExpanded = false }
+                                )
+                            }
+                        }
+                        DropdownMenuItem(
+                            text = { Text("➕ Crear nueva familia", color = GREEN, fontWeight = FontWeight.Medium) },
+                            onClick = { seleccionFamilia = FAMILIA_NUEVA; familiaExpanded = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sin asignar", color = Color.Gray) },
+                            onClick = { seleccionFamilia = FAMILIA_SIN; familiaExpanded = false }
+                        )
+                    }
+                }
+
+                if (seleccionFamilia == FAMILIA_NUEVA) {
+                    OutlinedTextField(
+                        value = nombreNuevaFamilia,
+                        onValueChange = { nombreNuevaFamilia = it },
+                        label = { Text("Nombre de la familia") },
+                        placeholder = { Text("Ej. Familia Pérez Quispe") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            }
 
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -1337,20 +1705,53 @@ private fun AgregarPersonaDialog(
                 }
                 Button(
                     onClick = {
-                        if (nombres.isNotBlank() && documento.isNotBlank()) {
-                            onConfirm(
-                                AfectadoLocal(
-                                    uuidAfectado = afectadoInicial?.uuidAfectado ?: UUID.randomUUID().toString(),
-                                    uuidIncidencia = uuidIncidencia,
-                                    idCatalogoDoc = tipoDocIdx,
-                                    documentoIdentidad = documento.trim(),
-                                    nombres = nombres.trim(),
-                                    familiaId = afectadoInicial?.familiaId,
-                                    familiaNombre = afectadoInicial?.familiaNombre,
-                                    estadoSync = if (esEdicion) EstadoSync.EDITADO else EstadoSync.NUEVO
+                        if (nombres.isBlank() || documento.isBlank()) return@Button
+
+                        // Resolver familia destino
+                        val (familiaIdFinal, familiaNombreFinal, familiaNueva) = when {
+                            familiaFija != null ->
+                                Triple(familiaFija.first, familiaFija.second, null)
+
+                            seleccionFamilia == FAMILIA_NUEVA -> {
+                                val nombreFam = nombreNuevaFamilia.trim().ifBlank {
+                                    "Familia ${nombres.trim().split(" ").firstOrNull() ?: "sin nombre"}"
+                                }
+                                val nuevoId = "fam-${UUID.randomUUID()}"
+                                Triple(
+                                    nuevoId,
+                                    nombreFam,
+                                    FamiliaLocal(
+                                        familiaId = nuevoId,
+                                        uuidIncidencia = uuidIncidencia,
+                                        nombreReferencia = nombreFam,
+                                        estadoSync = EstadoSync.NUEVO
+                                    )
                                 )
+                            }
+
+                            seleccionFamilia == FAMILIA_SIN ->
+                                Triple(null, null, null)
+
+                            else -> Triple(
+                                seleccionFamilia,
+                                opcionesFamilia.firstOrNull { it.first == seleccionFamilia }?.second,
+                                null
                             )
                         }
+
+                        onConfirm(
+                            AfectadoLocal(
+                                uuidAfectado = afectadoInicial?.uuidAfectado ?: UUID.randomUUID().toString(),
+                                uuidIncidencia = uuidIncidencia,
+                                idCatalogoDoc = tipoDocIdx,
+                                documentoIdentidad = documento.trim(),
+                                nombres = nombres.trim(),
+                                familiaId = familiaIdFinal,
+                                familiaNombre = familiaNombreFinal,
+                                estadoSync = if (esEdicion) EstadoSync.EDITADO else EstadoSync.NUEVO
+                            ),
+                            familiaNueva
+                        )
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN),

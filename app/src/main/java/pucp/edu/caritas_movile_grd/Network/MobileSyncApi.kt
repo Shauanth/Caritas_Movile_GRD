@@ -61,6 +61,7 @@ class MobileSyncApi(
                 connectTimeout = 20_000
                 readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
+                aplicarSyncKey()
             }
 
             try {
@@ -93,6 +94,13 @@ class MobileSyncApi(
             }
         }
     }    
+    private fun HttpURLConnection.aplicarSyncKey() {
+        val key = MobileApiConfig.MOBILE_SYNC_API_KEY.trim()
+        if (key.isNotEmpty()) {
+            setRequestProperty("x-mobile-sync-key", key)
+        }
+    }
+
     private suspend fun postJson(path: String, payload: JSONObject): JSONObject {
         return withContext(Dispatchers.IO) {
             val url = URL(baseUrl.trimEnd('/') + path)
@@ -104,6 +112,7 @@ class MobileSyncApi(
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
+                aplicarSyncKey()
             }
 
             try {

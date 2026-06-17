@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
+import pucp.edu.caritas_movile_grd.Incidencias.FamiliaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
@@ -120,6 +121,27 @@ interface SyncDao {
 
     @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
     suspend fun insertAfectadosIfNotExists(afectados: List<pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal>)
+
+    // ── Familias (grupos familiares) ───────────────────────────────────────────
+    @Query("SELECT * FROM familia_local WHERE familiaId = :familiaId LIMIT 1")
+    suspend fun getFamiliaPorId(familiaId: String): FamiliaLocal?
+
+    @Query("SELECT * FROM familia_local WHERE estadoSync IN ('NUEVO', 'EDITADO')")
+    suspend fun getFamiliasPendientesParaSincronizar(): List<FamiliaLocal>
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE)
+    suspend fun insertFamiliasIfNotExists(familias: List<FamiliaLocal>)
+
+    @Query("""
+        UPDATE familia_local
+        SET idFamiliaRemota = :idRemoto,
+            estadoSync = 'SINCRONIZADO'
+        WHERE familiaId = :familiaId
+    """)
+    suspend fun marcarFamiliaComoSincronizada(
+        familiaId: String,
+        idRemoto: String?
+    )
 
     @Query("""
         UPDATE evidencia_local

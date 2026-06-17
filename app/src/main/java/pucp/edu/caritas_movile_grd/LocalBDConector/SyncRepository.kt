@@ -18,7 +18,9 @@ import java.util.Locale
 import java.util.TimeZone
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
-
+import pucp.edu.caritas_movile_grd.Kits.KitDao
+import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
+import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
 data class SyncResult(
     val incidenciasSincronizadas: Int,
     val afectadosSincronizados: Int,
@@ -31,6 +33,7 @@ data class SyncResult(
 
 class SyncRepository(
     private val syncDao: SyncDao,
+    private val kitDao: KitDao,
     private val appContext: Context,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
@@ -45,7 +48,8 @@ class SyncRepository(
         val errores = mutableListOf<String>()
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
-
+        val avancesKitsSincronizados = sincronizarAvancesKitsAsignados(errores)
+        val evidenciasServidor = mutableListOf<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>()
         // 1. Sincronizar incidencias nuevas
         for (incidencia in incidenciasPendientes) {
             try {
@@ -330,6 +334,100 @@ class SyncRepository(
         )
     }
 
+    private suspend fun sincronizarAvancesKitsAsignados(
+        errores: MutableList<String>
+    ): Int {
+        val kitsPendientes = kitDao.getKitsAsignadosPendientesSync()
+
+        if (kitsPendientes.isEmpty()) return 0
+
+        val articulos = kitDao.getArticulosAsignadosPorKitsSync(
+            kitsPendientes.map { it.uuidKitAsignado }
+        )
+
+        val articulosPorKit = articulos.groupBy { it.uuidKitAsignado }
+        val kitsPorIncidencia = kitsPendientes.groupBy { it.uuidIncidencia }
+
+        var sincronizados = 0
+
+        for ((uuidIncidencia, kits) in kitsPorIncidencia) {
+            try {
+                val incidencia = syncDao.getIncidenciaPorUuid(uuidIncidencia)
+                    ?: continue
+
+                val idIncidenciaRemota = incidencia.idIncidenciaRemota
+                    ?: continue
+
+                val payload = JSONObject().apply {
+                    put(
+                        "uuidEntregaMovil",
+                        "entrega-asignada-${incidencia.uuidIncidencia}"
+                    )
+                    put("uuidIncidencia", incidencia.uuidIncidencia)
+                    put("idIncidenciaRemota", idIncidenciaRemota)
+                    put("codigoCaso", incidencia.codigoCasoRemoto)
+                    put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+                    put("fechaEntrega", normalizarFechaRegistro(System.currentTimeMillis()))
+
+                    val descripcion = kits
+                        .mapNotNull { it.descripcionEntrega?.takeIf { d -> d.isNotBlank() } }
+                        .lastOrNull()
+                        ?: "Avance de entrega registrado desde móvil."
+
+                    put("descripcionEntrega", descripcion)
+                    put("marcarComoAtendido", false)
+
+                    val kitsArray = org.json.JSONArray()
+
+                    kits.forEach { kit ->
+                        val articulosKit = articulosPorKit[kit.uuidKitAsignado].orEmpty()
+
+                        val articulosArray = org.json.JSONArray()
+                        articulosKit.forEach { articulo ->
+                            articulosArray.put(JSONObject().apply {
+                                put("codigo", articulo.codigo)
+                                put("descripcion", articulo.descripcion)
+                                put("cantidadAsignada", articulo.cantidadAsignada)
+                                put("cantidadEntregada", articulo.cantidadEntregada)
+                                put("confirmado", articulo.confirmado)
+                            })
+                        }
+
+                        kitsArray.put(JSONObject().apply {
+                            put("uuidKitAsignado", kit.uuidKitAsignado)
+                            put("refIdFamilia", kit.refIdFamilia)
+                            put("nombreFamilia", kit.nombreFamilia)
+                            put("tipoKit", kit.tipoKit)
+                            put("estadoEntrega", kit.estadoEntrega)
+                            put("articulos", articulosArray)
+                        })
+                    }
+
+                    put("kits", kitsArray)
+                }
+
+                val response = mobileSyncApi.sincronizarEntregaAsignada(payload)
+
+                if (response.optBoolean("ok", false)) {
+                    kitDao.marcarKitsAsignadosSincronizados(
+                        kits.map { it.uuidKitAsignado }
+                    )
+                    sincronizados += kits.size
+                } else {
+                    errores.add(
+                        response.optString(
+                            "message",
+                            "No se pudo sincronizar avance de kits asignados."
+                        )
+                    )
+                }
+            } catch (ex: Exception) {
+                errores.add("Error al sincronizar avance de kits asignados: ${ex.message}")
+            }
+        }
+
+        return sincronizados
+    }
     suspend fun descargarIncidenciasDelServidor() {
         val response = mobileSyncApi.obtenerIncidenciasAsignadas(MobileApiConfig.MOBILE_SYNC_USER_ID)
         val items = response.optJSONArray("incidencias") ?: return
@@ -411,6 +509,151 @@ class SyncRepository(
         val mapaIdRemotoAUuid = incidencias
             .filter { it.idIncidenciaRemota != null }
             .associate { it.idIncidenciaRemota!! to it.uuidIncidencia }
+
+
+        // Descargar kits asignados por especialista desde el servidor
+        val kitsAsignadosServidor = mutableListOf<KitAsignadoLocal>()
+        val articulosAsignadosServidor = mutableListOf<KitArticuloAsignadoLocal>()
+
+        for (i in 0 until items.length()) {
+            val wrapper = items.optJSONObject(i) ?: continue
+            val inc = wrapper.optJSONObject("incidencia") ?: continue
+
+            val idRemoto = inc.optString("idIncidencia")
+                .takeIf { it.isNotBlank() && it != "null" }
+                ?: continue
+
+            val uuidIncidencia = mapaIdRemotoAUuid[idRemoto] ?: continue
+            val kitsJson = wrapper.optJSONArray("kitsAsignados") ?: continue
+
+            for (k in 0 until kitsJson.length()) {
+                val kitJson = kitsJson.optJSONObject(k) ?: continue
+
+                val uuidKitAsignado = kitJson.optString("uuidKitAsignado")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: continue
+
+                val tipoKit = kitJson.optString("tipoKit")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: continue
+
+                kitsAsignadosServidor.add(
+                    KitAsignadoLocal(
+                        uuidKitAsignado = uuidKitAsignado,
+                        uuidIncidencia = uuidIncidencia,
+                        idIncidenciaRemota = idRemoto,
+                        refIdFamilia = kitJson.optString("refIdFamilia")
+                            .takeIf { it.isNotBlank() && it != "null" },
+                        nombreFamilia = kitJson.optString("nombreFamilia")
+                            .takeIf { it.isNotBlank() && it != "null" },
+                        idKitEmergenciaRemoto = kitJson.optString("idKitEmergenciaRemoto")
+                            .takeIf { it.isNotBlank() && it != "null" },
+                        tipoKit = tipoKit,
+                        estadoEntrega = "PENDIENTE",
+                        estadoSync = EstadoSync.SINCRONIZADO
+                    )
+                )
+
+                val articulosJson = kitJson.optJSONArray("articulos") ?: continue
+
+                for (a in 0 until articulosJson.length()) {
+                    val artJson = articulosJson.optJSONObject(a) ?: continue
+
+                    val descripcion = artJson.optString("descripcion")
+                        .takeIf { it.isNotBlank() && it != "null" }
+                        ?: continue
+
+                    articulosAsignadosServidor.add(
+                        KitArticuloAsignadoLocal(
+                            uuidArticuloAsignado = "$uuidKitAsignado::$a",
+                            uuidKitAsignado = uuidKitAsignado,
+                            codigo = artJson.optString("codigo")
+                                .takeIf { it.isNotBlank() && it != "null" }
+                                ?: "",
+                            descripcion = descripcion,
+                            cantidadAsignada = artJson.optInt("cantidad", 1),
+                            cantidadEntregada = 0,
+                            confirmado = false
+                        )
+                    )
+                }
+            }
+        }
+        if (kitsAsignadosServidor.isNotEmpty()) {
+            kitDao.insertKitsAsignados(kitsAsignadosServidor)
+            Log.d("SyncRepository", "Descargados ${kitsAsignadosServidor.size} kits asignados")
+        }
+
+        if (articulosAsignadosServidor.isNotEmpty()) {
+            kitDao.insertArticulosAsignados(articulosAsignadosServidor)
+            Log.d("SyncRepository", "Descargados ${articulosAsignadosServidor.size} artículos de kits asignados")
+        }
+
+        // Aplicar avance de entrega móvil ya registrado en el servidor
+        // Esto permite restaurar checks y estados después de sincronizar o reinstalar la app.
+        for (i in 0 until items.length()) {
+            val wrapper = items.optJSONObject(i) ?: continue
+            val entregaMovil = wrapper.optJSONObject("entregaMovil") ?: continue
+
+            val fechaEntregaMs = parseFechaServidorMillis(
+                entregaMovil.optString("fechaEntrega")
+            ) ?: System.currentTimeMillis()
+
+            val descripcionEntrega = entregaMovil.optString("descripcionEntrega")
+                .takeIf { it.isNotBlank() && it != "null" }
+
+            val kitsEntregados = entregaMovil.optJSONArray("kitsEntregados") ?: continue
+
+            for (k in 0 until kitsEntregados.length()) {
+                val kitJson = kitsEntregados.optJSONObject(k) ?: continue
+
+                val uuidKitAsignado = kitJson.optString("uuidKitAsignado")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: continue
+
+                val estadoEntrega = kitJson.optString("estadoEntrega")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: "PENDIENTE"
+
+                kitDao.marcarKitEntregado(
+                    uuidKitAsignado = uuidKitAsignado,
+                    estadoEntrega = estadoEntrega,
+                    fechaEntrega = fechaEntregaMs,
+                    descripcionEntrega = descripcionEntrega,
+                    evidenciaLocalUri = null,
+                    estadoSync = EstadoSync.SINCRONIZADO
+                )
+
+                val articulos = kitJson.optJSONArray("articulos") ?: continue
+
+                for (a in 0 until articulos.length()) {
+                    val artJson = articulos.optJSONObject(a) ?: continue
+
+                    val codigo = artJson.optString("codigo")
+                        .takeIf { it.isNotBlank() && it != "null" }
+                        ?: ""
+
+                    val descripcion = artJson.optString("descripcion")
+                        .takeIf { it.isNotBlank() && it != "null" }
+                        ?: ""
+
+                    val confirmado = artJson.optBoolean("confirmado", false)
+                    val cantidadEntregada = artJson.optInt(
+                        "cantidadEntregada",
+                        if (confirmado) artJson.optInt("cantidadAsignada", 1) else 0
+                    )
+
+                    kitDao.actualizarConfirmacionArticuloPorKitCodigo(
+                        uuidKitAsignado = uuidKitAsignado,
+                        codigo = codigo,
+                        descripcion = descripcion,
+                        confirmado = confirmado,
+                        cantidadEntregada = cantidadEntregada
+                    )
+                }
+            }
+        }
+
 
         val evidenciasServidor = mutableListOf<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>()
         for (i in 0 until items.length()) {
@@ -964,4 +1207,27 @@ private fun JSONObject.putNullable(key: String, value: Any?) {
     } else {
         put(key, value)
     }
+}
+private fun parseFechaServidorMillis(fecha: String?): Long? {
+    val raw = fecha
+        ?.takeIf { it.isNotBlank() && it != "null" }
+        ?: return null
+
+    val patrones = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'"
+    )
+
+    for (patron in patrones) {
+        try {
+            val formatter = SimpleDateFormat(patron, Locale.US)
+            formatter.timeZone = TimeZone.getTimeZone("UTC")
+            val parsed = formatter.parse(raw)
+            if (parsed != null) return parsed.time
+        } catch (_: Exception) {
+            // intenta con el siguiente patrón
+        }
+    }
+
+    return null
 }

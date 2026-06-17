@@ -15,6 +15,12 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
     fun getEntregasPorIncidencia(uuidIncidencia: String) =
         repository.getEntregasPorIncidencia(uuidIncidencia)
 
+    fun getKitsAsignadosPorIncidencia(uuidIncidencia: String) =
+        repository.getKitsAsignadosPorIncidencia(uuidIncidencia)
+
+    fun getArticulosPorKit(uuidKitAsignado: String) =
+        repository.getArticulosPorKit(uuidKitAsignado)
+
     fun realizarEntrega(entrega: EntregaKitLocal) {
         viewModelScope.launch {
             repository.insertarEntrega(entrega)
@@ -26,4 +32,41 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
             repository.eliminarEntrega(entrega)
         }
     }
+
+    fun actualizarConfirmacionArticulo(
+        articulo: KitArticuloAsignadoLocal,
+        confirmado: Boolean
+    ) {
+        viewModelScope.launch {
+            repository.actualizarConfirmacionArticulo(articulo, confirmado)
+        }
+    }
+
+    fun marcarKitEntregado(
+        kit: KitAsignadoLocal,
+        descripcionEntrega: String?,
+        evidenciaLocalUri: String?,
+        estadoEntrega: String
+    ) {
+        viewModelScope.launch {
+            repository.marcarKitEntregado(
+                kit = kit,
+                descripcionEntrega = descripcionEntrega,
+                evidenciaLocalUri = evidenciaLocalUri,
+                estadoEntrega = estadoEntrega
+            )
+        }
+    }
+    fun confirmarKitCompleto(
+        kit: KitAsignadoLocal,
+        descripcionEntrega: String?
+    ) {
+        viewModelScope.launch {
+            repository.confirmarKitCompleto(
+                kit = kit,
+                descripcionEntrega = descripcionEntrega
+            )
+        }
+    }
+
 }

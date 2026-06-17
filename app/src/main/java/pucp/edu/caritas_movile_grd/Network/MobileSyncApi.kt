@@ -45,8 +45,8 @@ class MobileSyncApi(
         return postJson("/api/mobile/sync/finalizar-recopilacion", payload)
     }    
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
-        val path = if (idUsuarioGRD.isBlank()) "/api/mobile/mis-incidencias"
-                   else "/api/mobile/mis-incidencias?idUsuarioGRD=$idUsuarioGRD"
+        val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
+                   else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"
         return getJson(path)
     }     
     private suspend fun getJson(path: String): JSONObject {

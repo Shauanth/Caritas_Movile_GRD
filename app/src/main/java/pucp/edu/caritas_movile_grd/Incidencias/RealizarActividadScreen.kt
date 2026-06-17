@@ -45,7 +45,8 @@ import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
 import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 import pucp.edu.caritas_movile_grd.Kits.KitRepository
 import pucp.edu.caritas_movile_grd.Kits.KitViewModel
-
+import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
+import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
 
@@ -61,6 +62,7 @@ fun RealizarActividadScreen(
     val incidencias by viewModel.incidencias.collectAsState()
     val incidencia = incidencias.find { it.uuidIncidencia == uuidIncidencia }
     val afectados by viewModel.getAfectados(uuidIncidencia).collectAsState(initial = emptyList())
+    val context = LocalContext.current
 
     if (incidencia == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -179,14 +181,16 @@ fun RealizarActividadScreen(
                 Button(
                     onClick = {
                         showFinalizarDialog = false
-                        viewModel.guardarIncidenciaYLuego(
-                            incidencia.copy(
-                                estado = "DATA RECOPILADA",
-                                estadoSync = EstadoSync.EDITADO,
-                                fechaUltimaModificacion = System.currentTimeMillis()
-                            )
-                        ) {
-                            syncViewModel.sincronizarPendientes()
+                        viewModel.finalizarRecopilacion(incidencia) { ok, message ->
+                            Toast.makeText(
+                                context,
+                                if (ok) {
+                                    "Recopilación finalizada."
+                                } else {
+                                    message ?: "No se pudo finalizar la recopilación."
+                                },
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN)
@@ -1697,17 +1701,21 @@ private fun KitsTab(
     afectados: List<AfectadoLocal>,
     kitViewModel: KitViewModel
 ) {
-    val entregas by kitViewModel.getEntregasPorIncidencia(incidencia.uuidIncidencia)
+    val kitsAsignados by kitViewModel
+        .getKitsAsignadosPorIncidencia(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
 
-    var showDialog by remember { mutableStateOf(false) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (entregas.isEmpty()) {
+    if (kitsAsignados.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF5F5F5)),
+            contentAlignment = Alignment.Center
+        ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(24.dp)
             ) {
                 Icon(
                     Icons.Default.Inventory2,
@@ -1715,65 +1723,219 @@ private fun KitsTab(
                     modifier = Modifier.size(56.dp),
                     tint = Color.LightGray
                 )
-                Spacer(Modifier.height(8.dp))
-                Text("Sin entregas registradas", color = Color.Gray, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = { showDialog = true }) {
-                    Text("Registrar entrega", color = GREEN)
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Resumen
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        val pendientes = entregas.count { it.estadoSync != EstadoSync.SINCRONIZADO }
-                        KitResumenChip("Total", entregas.size, Color(0xFF1565C0))
-                        KitResumenChip("Pendientes", pendientes, Color(0xFFE65100))
-                        KitResumenChip("Sync", entregas.size - pendientes, GREEN)
-                    }
-                }
-                items(entregas, key = { it.uuidEntrega }) { entrega ->
-                    val nombreAfectado = afectados
-                        .find { it.uuidAfectado == entrega.uuidAfectado }
-                        ?.let { "${it.nombres} ${it.apellidoPaterno ?: ""}".trim() }
-                        ?: "Afectado desconocido"
-                    EntregaKitCard(entrega = entrega, nombreAfectado = nombreAfectado)
-                }
+                Text(
+                    "Aún no hay kits asignados",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    "La asignación debe realizarla el Especialista GRD desde la revisión del caso.",
+                    color = Color.Gray,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
-
-        FloatingActionButton(
-            onClick = { showDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = GREEN,
-            contentColor = Color.White
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Nueva entrega")
-        }
+        return
     }
 
-    if (showDialog) {
-        NuevaEntregaDialog(
-            afectados = afectados,
-            uuidIncidencia = incidencia.uuidIncidencia,
-            idIncidenciaRemota = incidencia.idIncidenciaRemota,
-            onDismiss = { showDialog = false },
-            onConfirmar = { entrega ->
-                kitViewModel.realizarEntrega(entrega)
-                showDialog = false
-            }
-        )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF5F5F5)),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                "Kits asignados por el especialista",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "Confirma los artículos entregados y registra la evidencia de entrega.",
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+
+        items(kitsAsignados, key = { it.uuidKitAsignado }) { kit ->
+            KitAsignadoCard(
+                kit = kit,
+                kitViewModel = kitViewModel
+            )
+        }
     }
 }
+@Composable
+private fun KitAsignadoCard(
+    kit: KitAsignadoLocal,
+    kitViewModel: KitViewModel
+) {
+    val articulos by kitViewModel
+        .getArticulosPorKit(kit.uuidKitAsignado)
+        .collectAsState(initial = emptyList())
 
+    var descripcionEntrega by remember { mutableStateOf(kit.descripcionEntrega ?: "") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    Icons.Default.Inventory2,
+                    contentDescription = null,
+                    tint = GREEN
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        kit.tipoKit,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        kit.nombreFamilia ?: "Familia / persona asignada",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = when (kit.estadoEntrega) {
+                        "ENTREGADO" -> Color(0xFFE8F5E9)
+                        "PARCIAL" -> Color(0xFFFFF3E0)
+                        else -> Color(0xFFF3F4F6)
+                    }
+                ) {
+                    Text(
+                        kit.estadoEntrega,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = when (kit.estadoEntrega) {
+                            "ENTREGADO" -> Color(0xFF2E7D32)
+                            "PARCIAL" -> Color(0xFFE65100)
+                            else -> Color.Gray
+                        }
+                    )
+                }
+            }
+
+            if (articulos.isEmpty()) {
+                Text(
+                    "Este kit no tiene artículos cargados.",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    articulos.forEach { articulo ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (articulo.confirmado) Color(0xFFE8F5E9) else Color.Transparent,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = articulo.confirmado,
+                                onCheckedChange = { checked ->
+                                    kitViewModel.actualizarConfirmacionArticulo(
+                                        articulo = articulo,
+                                        confirmado = checked
+                                    )
+                                }
+                            )
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    articulo.descripcion,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    articulo.codigo,
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
+                            Text(
+                                "x${articulo.cantidadAsignada}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = descripcionEntrega,
+                onValueChange = { descripcionEntrega = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Descripción de entrega") },
+                placeholder = {
+                    Text("Describe observaciones de la entrega...")
+                },
+                minLines = 2,
+                maxLines = 4,
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        kitViewModel.marcarKitEntregado(
+                            kit = kit,
+                            descripcionEntrega = descripcionEntrega,
+                            evidenciaLocalUri = null,
+                            estadoEntrega = "PARCIAL"
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Guardar parcial")
+                }
+
+                Button(
+                    onClick = {
+                        kitViewModel.marcarKitEntregado(
+                            kit = kit,
+                            descripcionEntrega = descripcionEntrega,
+                            evidenciaLocalUri = null,
+                            estadoEntrega = "ENTREGADO"
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Text("Marcar entregado")
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun EntregaKitCard(entrega: EntregaKitLocal, nombreAfectado: String) {
     val sincronizado = entrega.estadoSync == EstadoSync.SINCRONIZADO

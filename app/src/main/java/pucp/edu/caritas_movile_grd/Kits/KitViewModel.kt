@@ -57,4 +57,16 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
             )
         }
     }
+    fun confirmarKitCompleto(
+        kit: KitAsignadoLocal,
+        descripcionEntrega: String?
+    ) {
+        viewModelScope.launch {
+            repository.confirmarKitCompleto(
+                kit = kit,
+                descripcionEntrega = descripcionEntrega
+            )
+        }
+    }
+
 }

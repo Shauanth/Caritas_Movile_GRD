@@ -48,7 +48,10 @@ class MobileSyncApi(
         val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
                    else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"
         return getJson(path)
-    }     
+    }
+    suspend fun sincronizarEntregaAsignada(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/entregas-asignadas", payload)
+    }
     private suspend fun getJson(path: String): JSONObject {
         return withContext(Dispatchers.IO) {
             val url = URL(baseUrl.trimEnd('/') + path)

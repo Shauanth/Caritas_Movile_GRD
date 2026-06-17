@@ -64,4 +64,23 @@ class KitRepository(private val kitDao: KitDao) {
             estadoSync = EstadoSync.NUEVO
         )
     }
+
+    suspend fun confirmarKitCompleto(
+        kit: KitAsignadoLocal,
+        descripcionEntrega: String?,
+        evidenciaLocalUri: String? = null
+    ) {
+        kitDao.marcarTodosArticulosDeKitEntregados(
+            uuidKitAsignado = kit.uuidKitAsignado
+        )
+
+        kitDao.marcarKitEntregado(
+            uuidKitAsignado = kit.uuidKitAsignado,
+            estadoEntrega = "ENTREGADO",
+            fechaEntrega = System.currentTimeMillis(),
+            descripcionEntrega = descripcionEntrega,
+            evidenciaLocalUri = evidenciaLocalUri,
+            estadoSync = EstadoSync.NUEVO
+        )
+    }
 }

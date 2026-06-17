@@ -78,7 +78,30 @@ interface KitDao {
         confirmado: Boolean,
         cantidadEntregada: Int
     )
+    @Query("""
+    SELECT * FROM kit_asignado_local
+    WHERE estadoSync != 'SINCRONIZADO'
+    ORDER BY uuidIncidencia ASC, tipoKit ASC
+""")
+    suspend fun getKitsAsignadosPendientesSync(): List<KitAsignadoLocal>
 
+    @Query("""
+    SELECT * FROM kit_articulo_asignado_local
+    WHERE uuidKitAsignado IN (:uuidsKitAsignado)
+    ORDER BY uuidKitAsignado ASC, descripcion ASC
+""")
+    suspend fun getArticulosAsignadosPorKitsSync(
+        uuidsKitAsignado: List<String>
+    ): List<KitArticuloAsignadoLocal>
+
+    @Query("""
+    UPDATE kit_asignado_local
+    SET estadoSync = 'SINCRONIZADO'
+    WHERE uuidKitAsignado IN (:uuidsKitAsignado)
+""")
+    suspend fun marcarKitsAsignadosSincronizados(
+        uuidsKitAsignado: List<String>
+    )
     @Query("""
         UPDATE kit_asignado_local
         SET estadoEntrega = :estadoEntrega,
@@ -95,5 +118,31 @@ interface KitDao {
         descripcionEntrega: String?,
         evidenciaLocalUri: String?,
         estadoSync: pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
+    )
+    @Query("""
+    UPDATE kit_articulo_asignado_local
+    SET confirmado = :confirmado,
+        cantidadEntregada = :cantidadEntregada
+    WHERE uuidKitAsignado = :uuidKitAsignado
+      AND (
+        (:codigo != '' AND codigo = :codigo)
+        OR (:descripcion != '' AND descripcion = :descripcion)
+      )
+""")
+    suspend fun actualizarConfirmacionArticuloPorKitCodigo(
+        uuidKitAsignado: String,
+        codigo: String,
+        descripcion: String,
+        confirmado: Boolean,
+        cantidadEntregada: Int
+    )
+    @Query("""
+    UPDATE kit_articulo_asignado_local
+    SET confirmado = 1,
+        cantidadEntregada = cantidadAsignada
+    WHERE uuidKitAsignado = :uuidKitAsignado
+""")
+    suspend fun marcarTodosArticulosDeKitEntregados(
+        uuidKitAsignado: String
     )
 }

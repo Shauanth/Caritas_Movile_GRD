@@ -1920,11 +1920,10 @@ private fun KitAsignadoCard(
 
                 Button(
                     onClick = {
-                        kitViewModel.marcarKitEntregado(
+                        kitViewModel.confirmarKitCompleto(
                             kit = kit,
-                            descripcionEntrega = descripcionEntrega,
-                            evidenciaLocalUri = null,
-                            estadoEntrega = "ENTREGADO"
+                            descripcionEntrega = descripcionEntrega
+
                         )
                     },
                     modifier = Modifier.weight(1f),

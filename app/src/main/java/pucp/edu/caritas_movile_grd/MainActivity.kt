@@ -63,6 +63,7 @@ fun AppNavigation() {
 
     val syncRepository = SyncRepository(
         syncDao = database.syncDao(),
+        kitDao = database.kitDao(),
         appContext = context.applicationContext
     )
 

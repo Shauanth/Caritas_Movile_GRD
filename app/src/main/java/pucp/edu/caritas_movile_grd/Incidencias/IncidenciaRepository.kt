@@ -31,6 +31,24 @@ class IncidenciaRepository(
     suspend fun guardarAfectado(afectado: AfectadoLocal) {
         incidenciaDao.insertAfectado(afectado)
     }
+
+    suspend fun eliminarAfectado(uuidAfectado: String) {
+        incidenciaDao.eliminarAfectado(uuidAfectado)
+    }
+
+    // ── Grupos familiares ─────────────────────────────────────────────────────
+    fun getGruposFamiliares(uuidIncidencia: String): Flow<List<GrupoFamiliarLocal>> =
+        incidenciaDao.getGruposFamiliaresByIncidencia(uuidIncidencia)
+
+    suspend fun guardarGrupoFamiliar(grupo: GrupoFamiliarLocal) {
+        incidenciaDao.insertGrupoFamiliar(grupo)
+    }
+
+    /** Elimina el grupo y todas las personas que lo integran. */
+    suspend fun eliminarGrupoFamiliar(uuidGrupo: String) {
+        incidenciaDao.eliminarAfectadosDeFamilia(uuidGrupo)
+        incidenciaDao.eliminarGrupoFamiliar(uuidGrupo)
+    }
     suspend fun guardarObservacion(observacion: ObservacionLocal) {
         incidenciaDao.insertObservacion(observacion)
     }   

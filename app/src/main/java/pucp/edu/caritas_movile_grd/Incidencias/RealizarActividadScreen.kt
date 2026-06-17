@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,15 +42,38 @@ import java.text.SimpleDateFormat
 import java.util.*
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaContent
 
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
+
+// ── Catálogos del empadronamiento de campo (alineados con la web) ──────────────
+private val TIPOS_DOC_RA = listOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
+private val GENEROS_RA = listOf("Femenino", "Masculino", "Otro", "Prefiere no decir")
+private val PARENTESCOS_RA = listOf(
+    "Jefe(a) de Hogar", "Padre", "Madre", "Hijo(a)",
+    "Nieto(a)", "Abuelo(a)", "Tío(a)", "Cónyuge", "Otro"
+)
+private val SITUACIONES_RA = listOf(
+    "Gestante", "Discapacitado", "Con Lactancia", "Enfermo",
+    "Herido", "Enfermo crónico", "Adulto mayor"
+)
+
+/** Normaliza el género almacenado (puede venir como "M"/"F" del backend) a etiqueta de UI. */
+private fun generoDisplay(genero: String?): String = when (genero?.trim()?.lowercase()) {
+    "m", "masculino" -> "Masculino"
+    "f", "femenino" -> "Femenino"
+    null, "" -> "Femenino"
+    else -> genero!!
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RealizarActividadScreen(
     uuidIncidencia: String,
     viewModel: IncidenciaViewModel,
+    evidenciaViewModel: EvidenciaViewModel,
     onBack: () -> Unit
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
@@ -64,7 +89,7 @@ fun RealizarActividadScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
     
-    val tabs = listOf("Info", "Familias")
+    val tabs = listOf("Info", "Familias", "Evidencias")
     var showMapSheet by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -130,6 +155,11 @@ fun RealizarActividadScreen(
             when (selectedTab) {
                 0 -> InfoTab(incidencia, viewModel)
                 1 -> FamiliasTab(incidencia, afectados, viewModel)
+                2 -> EvidenciaContent(
+                    uuidReferencia = incidencia.uuidIncidencia,
+                    viewModel = evidenciaViewModel,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
@@ -567,6 +597,23 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
 // TAB FAMILIAS
 // ════════════════════════════════════════════════════════════════════════════
 
+// Vista agregada de un grupo familiar (combina la fila local con sus integrantes).
+private data class GrupoView(
+    val id: String,
+    val nombre: String,
+    val observaciones: String?,
+    val verificado: Boolean,
+    val miembros: List<AfectadoLocal>,
+    val row: GrupoFamiliarLocal?
+)
+
+// Estado del sheet de persona (alta o edición).
+private data class PersonaSheetState(
+    val editing: AfectadoLocal? = null,
+    val familiaId: String? = editing?.familiaId,
+    val familiaNombre: String? = editing?.familiaNombre
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FamiliasTab(
@@ -574,112 +621,499 @@ private fun FamiliasTab(
     afectados: List<AfectadoLocal>,
     viewModel: IncidenciaViewModel
 ) {
-    var filtro by remember { mutableStateOf("Todos") }
-    var showAddDialog by remember { mutableStateOf(false) }
-    val filtros = listOf("Todos", "Pendientes", "Confirmados")
+    val grupos by viewModel.getGruposFamiliares(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
 
-    val afectadosFiltrados = when (filtro) {
-        "Pendientes"  -> afectados.filter { it.estadoSync == EstadoSync.NUEVO || it.estadoSync == EstadoSync.EDITADO }
-        "Confirmados" -> afectados.filter { it.estadoSync == EstadoSync.SINCRONIZADO }
-        else          -> afectados
+    var personaSheet by remember { mutableStateOf<PersonaSheetState?>(null) }
+    var showGrupoDialog by remember { mutableStateOf(false) }
+    var obsGrupo by remember { mutableStateOf<GrupoFamiliarLocal?>(null) }
+    var confirmarBorrarPersona by remember { mutableStateOf<AfectadoLocal?>(null) }
+    var confirmarBorrarGrupo by remember { mutableStateOf<GrupoView?>(null) }
+
+    // Agrupar afectados por familiaId; los que no tienen familia van como individuales.
+    val personasIndividuales = afectados.filter { it.familiaId.isNullOrBlank() }
+    val porFamilia = afectados
+        .filter { !it.familiaId.isNullOrBlank() }
+        .groupBy { it.familiaId!! }
+
+    // La vista de grupos combina las filas locales con los familiaId presentes en afectados
+    // (los afectados descargados del backend traen familiaId aunque aún no exista fila local).
+    val gruposPorId = grupos.associateBy { it.uuidGrupo }
+    val familiaIds = (grupos.map { it.uuidGrupo } + porFamilia.keys).distinct()
+    val gruposVista = familiaIds.map { id ->
+        val miembros = porFamilia[id].orEmpty()
+        val row = gruposPorId[id]
+        GrupoView(
+            id = id,
+            nombre = row?.nombre
+                ?: miembros.firstOrNull()?.familiaNombre
+                ?: "Grupo Familiar",
+            observaciones = row?.observaciones,
+            verificado = row?.verificado ?: false,
+            miembros = miembros,
+            row = row
+        )
+    }.sortedBy { it.nombre }
+
+    // Filtro por estado de verificación de campo.
+    var filtroVerif by remember { mutableStateOf("Todas") }
+    val gruposMostrados = when (filtroVerif) {
+        "Pendientes" -> gruposVista.filter { !it.verificado }
+        "Verificadas" -> gruposVista.filter { it.verificado }
+        else -> gruposVista
+    }
+    val verificadas = gruposVista.count { it.verificado }
+
+    // Crea o actualiza la fila local del grupo y alterna su verificación.
+    fun toggleVerificado(gv: GrupoView) {
+        val base = gv.row ?: GrupoFamiliarLocal(
+            uuidGrupo = gv.id,
+            uuidIncidencia = incidencia.uuidIncidencia,
+            nombre = gv.nombre,
+            observaciones = gv.observaciones
+        )
+        viewModel.guardarGrupoFamiliar(base.copy(verificado = !gv.verificado))
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
+            .background(Color(0xFFF5F5F5)),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ── Chips de filtro ──────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            filtros.forEach { f ->
-                FilterChip(
-                    selected = filtro == f,
-                    onClick = { filtro = f },
-                    label = { Text(f, fontSize = 13.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = GREEN,
-                        selectedLabelColor = Color.White
-                    )
+        // ── Encabezado ───────────────────────────────────────────────────────
+        item {
+            Column {
+                Text(
+                    "PERSONAS AFECTADAS",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray,
+                    letterSpacing = 1.sp
                 )
-            }
-        }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // ── Header conteo ────────────────────────────────────────────────
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Text(
+                    "${gruposVista.size} grupo(s) familiar(es) · ${afectados.size} persona(s)",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+                if (gruposVista.isNotEmpty()) {
                     Text(
-                        "Personas (${afectadosFiltrados.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        "${afectados.size} en total",
-                        fontSize = 13.sp,
-                        color = Color.Gray
+                        "$verificadas de ${gruposVista.size} familia(s) verificada(s)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (verificadas == gruposVista.size) Color(0xFF2E7D32) else Color(0xFFE65100)
                     )
                 }
             }
+        }
 
-            // ── Lista de afectados ───────────────────────────────────────────
-            if (afectadosFiltrados.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Sin personas registradas",
-                            color = Color.Gray,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
+        // ── Filtro de verificación ───────────────────────────────────────────
+        if (gruposVista.isNotEmpty()) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Todas", "Pendientes", "Verificadas").forEach { f ->
+                        FilterChip(
+                            selected = filtroVerif == f,
+                            onClick = { filtroVerif = f },
+                            label = { Text(f, fontSize = 13.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = GREEN,
+                                selectedLabelColor = Color.White
+                            )
                         )
                     }
                 }
-            } else {
-                items(afectadosFiltrados) { afectado ->
-                    AfectadoCard(afectado)
+            }
+        }
+
+        // ── Grupos familiares ────────────────────────────────────────────────
+        items(gruposMostrados, key = { it.id }) { gv ->
+            FamiliaGrupoCard(
+                grupo = gv,
+                onToggleVerificado = { toggleVerificado(gv) },
+                onAddMember = {
+                    personaSheet = PersonaSheetState(familiaId = gv.id, familiaNombre = gv.nombre)
+                },
+                onComment = {
+                    obsGrupo = gv.row ?: GrupoFamiliarLocal(
+                        uuidGrupo = gv.id,
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        nombre = gv.nombre
+                    )
+                },
+                onDeleteGrupo = { confirmarBorrarGrupo = gv },
+                onEditPersona = { p ->
+                    personaSheet = PersonaSheetState(editing = p, familiaId = gv.id, familiaNombre = gv.nombre)
+                },
+                onDeletePersona = { p -> confirmarBorrarPersona = p }
+            )
+        }
+
+        // ── Personas individuales ────────────────────────────────────────────
+        if (personasIndividuales.isNotEmpty()) {
+            item {
+                Text(
+                    "Personas individuales",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.Gray
+                )
+            }
+            items(personasIndividuales, key = { it.uuidAfectado }) { p ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    PersonaRow(
+                        afectado = p,
+                        onEdit = { personaSheet = PersonaSheetState(editing = p) },
+                        onDelete = { confirmarBorrarPersona = p }
+                    )
                 }
             }
+        }
 
-            // ── Botón agregar ────────────────────────────────────────────────
+        if (gruposVista.isEmpty() && personasIndividuales.isEmpty()) {
             item {
-                TextButton(
-                    onClick = { showAddDialog = true },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar persona", color = GREEN, fontWeight = FontWeight.Medium)
+                    Text(
+                        "Sin personas registradas aún.",
+                        color = Color.Gray,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // ── Acciones ─────────────────────────────────────────────────────────
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showGrupoDialog = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.GroupAdd, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Registrar Grupo", fontSize = 13.sp)
+                }
+                Button(
+                    onClick = { personaSheet = PersonaSheetState() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Icon(Icons.Default.PersonAdd, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Agregar Persona", fontSize = 13.sp)
                 }
             }
         }
     }
 
-    if (showAddDialog) {
-        AgregarPersonaDialog(
+    // ── Sheet de persona (alta / edición) ─────────────────────────────────────
+    personaSheet?.let { st ->
+        PersonaCampoSheet(
             uuidIncidencia = incidencia.uuidIncidencia,
-            onDismiss = { showAddDialog = false },
-            onConfirm = { afectado ->
+            estado = st,
+            grupos = gruposVista.map { it.id to it.nombre },
+            onDismiss = { personaSheet = null },
+            onSave = { afectado ->
                 viewModel.guardarAfectado(afectado)
-                showAddDialog = false
+                personaSheet = null
             }
+        )
+    }
+
+    // ── Diálogo: nuevo grupo familiar ─────────────────────────────────────────
+    if (showGrupoDialog) {
+        RegistrarGrupoDialog(
+            sugerido = "Grupo Familiar ${gruposVista.size + 1}",
+            onDismiss = { showGrupoDialog = false },
+            onConfirm = { nombre ->
+                viewModel.guardarGrupoFamiliar(
+                    GrupoFamiliarLocal(
+                        uuidGrupo = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        nombre = nombre,
+                        estadoSync = EstadoSync.NUEVO
+                    )
+                )
+                showGrupoDialog = false
+            }
+        )
+    }
+
+    // ── Diálogo: observaciones de la familia ──────────────────────────────────
+    obsGrupo?.let { g ->
+        ObsFamiliaDialog(
+            grupo = g,
+            onDismiss = { obsGrupo = null },
+            onSave = { texto ->
+                viewModel.guardarGrupoFamiliar(g.copy(observaciones = texto.ifBlank { null }))
+                obsGrupo = null
+            }
+        )
+    }
+
+    // ── Confirmaciones de borrado ─────────────────────────────────────────────
+    confirmarBorrarPersona?.let { p ->
+        AlertDialog(
+            onDismissRequest = { confirmarBorrarPersona = null },
+            title = { Text("Eliminar persona") },
+            text = { Text("¿Eliminar a ${p.nombres} del empadronamiento?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.eliminarAfectado(p.uuidAfectado)
+                        confirmarBorrarPersona = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) { Text("Eliminar") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { confirmarBorrarPersona = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    confirmarBorrarGrupo?.let { gv ->
+        AlertDialog(
+            onDismissRequest = { confirmarBorrarGrupo = null },
+            title = { Text("Eliminar grupo familiar") },
+            text = { Text("¿Eliminar \"${gv.nombre}\" y sus ${gv.miembros.size} integrante(s)?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.eliminarGrupoFamiliar(gv.id)
+                        confirmarBorrarGrupo = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) { Text("Eliminar") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { confirmarBorrarGrupo = null }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+// ── Tarjeta de grupo familiar ─────────────────────────────────────────────────
+@Composable
+private fun FamiliaGrupoCard(
+    grupo: GrupoView,
+    onToggleVerificado: () -> Unit,
+    onAddMember: () -> Unit,
+    onComment: () -> Unit,
+    onDeleteGrupo: () -> Unit,
+    onEditPersona: (AfectadoLocal) -> Unit,
+    onDeletePersona: (AfectadoLocal) -> Unit
+) {
+    val tieneObs = !grupo.observaciones.isNullOrBlank()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column {
+            // Cabecera
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFE8F1FB))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Group, null, tint = Color(0xFF1565C0), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    grupo.nombre,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF0D47A1),
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "(${grupo.miembros.size} integrante${if (grupo.miembros.size != 1) "s" else ""})",
+                    fontSize = 12.sp,
+                    color = Color(0xFF1565C0),
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onAddMember, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.PersonAdd, "Agregar integrante", tint = GREEN, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onComment, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.ChatBubbleOutline,
+                        "Comentario de familia",
+                        tint = if (tieneObs) Color(0xFF1565C0) else Color.Gray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onDeleteGrupo, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, "Eliminar grupo", tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
+                }
+            }
+
+            // Estado de verificación de empadronamiento
+            val verifBg = if (grupo.verificado) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+            val verifColor = if (grupo.verificado) Color(0xFF2E7D32) else Color(0xFFE65100)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(verifBg)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(
+                        if (grupo.verificado) Icons.Default.CheckCircle else Icons.Default.Schedule,
+                        null,
+                        tint = verifColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        if (grupo.verificado) "Familia verificada" else "Pendiente de verificación",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = verifColor
+                    )
+                }
+                TextButton(onClick = onToggleVerificado, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(
+                        if (grupo.verificado) "Marcar pendiente" else "Marcar verificada",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = verifColor
+                    )
+                }
+            }
+
+            // Comentario de la familia
+            if (tieneObs) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF5F9FF))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.ChatBubbleOutline,
+                        null,
+                        tint = Color(0xFF1565C0),
+                        modifier = Modifier.size(14.dp).padding(top = 2.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(grupo.observaciones!!, fontSize = 12.sp, color = Color(0xFF37474F), lineHeight = 16.sp)
+                }
+            }
+
+            // Integrantes
+            if (grupo.miembros.isEmpty()) {
+                Text(
+                    "Sin personas registradas en este grupo.",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                grupo.miembros.forEachIndexed { i, p ->
+                    if (i > 0) HorizontalDivider(color = Color(0xFFEEEEEE))
+                    PersonaRow(
+                        afectado = p,
+                        onEdit = { onEditPersona(p) },
+                        onDelete = { onDeletePersona(p) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Fila de persona afectada (editar / eliminar) ──────────────────────────────
+@Composable
+private fun PersonaRow(
+    afectado: AfectadoLocal,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val nombreCompleto = listOfNotNull(
+        afectado.nombres.takeIf { it.isNotBlank() },
+        afectado.apellidoPaterno?.takeIf { it.isNotBlank() },
+        afectado.apellidoMaterno?.takeIf { it.isNotBlank() }
+    ).joinToString(" ").ifBlank { "Sin nombre" }
+
+    val subtitulo = listOfNotNull(
+        afectado.edad?.let { "$it años" },
+        afectado.genero?.let { generoDisplay(it) },
+        afectado.documentoIdentidad
+            .takeIf { it.isNotBlank() }
+            ?.let { "${TIPO_DOC_MAP[afectado.idCatalogoDoc] ?: "Doc"}: $it" }
+    ).joinToString(" · ")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(Icons.Default.Person, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(nombreCompleto, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    afectado.parentesco?.takeIf { it.isNotBlank() }?.let { PersonaBadge(it, Color(0xFF1565C0), Color(0xFFE3F2FD)) }
+                }
+                if (subtitulo.isNotBlank()) {
+                    Text(subtitulo, fontSize = 12.sp, color = Color.Gray)
+                }
+                afectado.situacionActual?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(2.dp))
+                    PersonaBadge(it, Color(0xFFE65100), Color(0xFFFFF3E0))
+                }
+            }
+        }
+        Row {
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, "Editar", tint = Color(0xFF1565C0), modifier = Modifier.size(16.dp))
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Close, "Eliminar", tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PersonaBadge(texto: String, textColor: Color, bgColor: Color) {
+    Surface(shape = RoundedCornerShape(50), color = bgColor) {
+        Text(
+            texto,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = textColor
         )
     }
 }
@@ -788,56 +1222,7 @@ private fun SeguimientoItem(seguimiento: SeguimientoLocal) {
         }
     }
 }
-@Composable
-private fun AfectadoCard(afectado: AfectadoLocal) {
-    val esPendiente = afectado.estadoSync == EstadoSync.NUEVO || afectado.estadoSync == EstadoSync.EDITADO
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = Color.Gray
-                )
-                Column {
-                    Text(afectado.nombres, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                    Text(
-                        "${TIPO_DOC_MAP[afectado.idCatalogoDoc] ?: "Doc"}: ${afectado.documentoIdentidad}",
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
-            }
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = if (esPendiente) Color(0xFFFFF3E0) else Color(0xFFE8F5E9)
-            ) {
-                Text(
-                    if (esPendiente) "Pendiente" else "Confirmado",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (esPendiente) Color(0xFFE65100) else Color(0xFF2E7D32)
-                )
-            }
-        }
-    }
-}
+// (AfectadoCard fue reemplazada por PersonaRow / FamiliaGrupoCord en el tab Familias.)
 
 @Composable
 private fun InitialsAvatar(name: String, color: Color, size: Int = 36) {
@@ -1153,101 +1538,299 @@ private fun iniciarGrabacion(recognizer: SpeechRecognizer, onStarted: () -> Unit
     onStarted()
 }
 
+// ── Sheet de persona afectada (alta / edición) ────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AgregarPersonaDialog(
+private fun PersonaCampoSheet(
     uuidIncidencia: String,
+    estado: PersonaSheetState,
+    grupos: List<Pair<String, String>>, // id de grupo a nombre
     onDismiss: () -> Unit,
-    onConfirm: (AfectadoLocal) -> Unit
+    onSave: (AfectadoLocal) -> Unit
 ) {
-    var nombres by remember { mutableStateOf("") }
-    var documento by remember { mutableStateOf("") }
-    var tipoDocIdx by remember { mutableIntStateOf(1) } // 1=DNI
-    var expanded by remember { mutableStateOf(false) }
-    val tiposDoc = listOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
+    val editing = estado.editing
+    var tipoDocIdx by remember { mutableIntStateOf(editing?.idCatalogoDoc ?: 1) }
+    var documento by remember { mutableStateOf(editing?.documentoIdentidad ?: "") }
+    var nombres by remember { mutableStateOf(editing?.nombres ?: "") }
+    var apPaterno by remember { mutableStateOf(editing?.apellidoPaterno ?: "") }
+    var apMaterno by remember { mutableStateOf(editing?.apellidoMaterno ?: "") }
+    var edad by remember { mutableStateOf(editing?.edad?.toString() ?: "") }
+    var genero by remember { mutableStateOf(generoDisplay(editing?.genero)) }
+    var celular by remember { mutableStateOf(editing?.celular ?: "") }
+    var parentesco by remember { mutableStateOf(editing?.parentesco ?: "") }
+    var situacion by remember { mutableStateOf(editing?.situacionActual ?: "") }
+    var familiaSel by remember { mutableStateOf(estado.familiaId) }
+
+    var errNombres by remember { mutableStateOf<String?>(null) }
+    var errEdad by remember { mutableStateOf<String?>(null) }
+
+    val titulo = when {
+        editing != null -> "Editar persona"
+        estado.familiaNombre != null -> "Agregar integrante — ${estado.familiaNombre}"
+        else -> "Agregar persona afectada"
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Agregar persona afectada", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(titulo, fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
-            OutlinedTextField(
-                value = nombres,
-                onValueChange = { nombres = it },
-                label = { Text("Nombres completos") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp)
-            )
-
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded }
-            ) {
-                OutlinedTextField(
-                    value = tiposDoc.first { it.first == tipoDocIdx }.second,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Tipo de documento") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+            // Tipo doc + número
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DropdownFieldRA(
+                    label = "Tipo doc.",
+                    selected = TIPOS_DOC_RA.first { it.first == tipoDocIdx }.second,
+                    options = TIPOS_DOC_RA.map { it.second },
+                    onSelect = { sel -> tipoDocIdx = TIPOS_DOC_RA.first { it.second == sel }.first },
+                    modifier = Modifier.weight(0.4f)
                 )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    tiposDoc.forEach { (id, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            onClick = { tipoDocIdx = id; expanded = false }
-                        )
-                    }
-                }
+                OutlinedTextField(
+                    value = documento,
+                    onValueChange = { documento = it },
+                    label = { Text("N° Documento", fontSize = 12.sp) },
+                    modifier = Modifier.weight(0.6f),
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
             }
 
             OutlinedTextField(
-                value = documento,
-                onValueChange = { documento = it },
-                label = { Text("Número de documento") },
+                value = nombres,
+                onValueChange = { nombres = it; errNombres = null },
+                label = { Text("Nombres *", fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
                 singleLine = true,
-                shape = RoundedCornerShape(10.dp)
+                isError = errNombres != null,
+                supportingText = errNombres?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) } }
             )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = apPaterno,
+                    onValueChange = { apPaterno = it },
+                    label = { Text("Ap. Paterno", fontSize = 12.sp) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = apMaterno,
+                    onValueChange = { apMaterno = it },
+                    label = { Text("Ap. Materno", fontSize = 12.sp) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = edad,
+                    onValueChange = { if (it.length <= 3 && it.all { c -> c.isDigit() }) { edad = it; errEdad = null } },
+                    label = { Text("Edad *", fontSize = 12.sp) },
+                    modifier = Modifier.weight(0.3f),
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    isError = errEdad != null
+                )
+                DropdownFieldRA(
+                    label = "Género",
+                    selected = genero,
+                    options = GENEROS_RA,
+                    onSelect = { genero = it },
+                    modifier = Modifier.weight(0.7f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = celular,
+                    onValueChange = { if (it.length <= 9 && it.all { c -> c.isDigit() }) celular = it },
+                    label = { Text("Celular", fontSize = 12.sp) },
+                    modifier = Modifier.weight(0.5f),
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    singleLine = true
+                )
+                DropdownFieldRA(
+                    label = "Parentesco",
+                    selected = parentesco,
+                    options = listOf("") + PARENTESCOS_RA,
+                    onSelect = { parentesco = it },
+                    modifier = Modifier.weight(0.5f)
+                )
+            }
+
+            DropdownFieldRA(
+                label = "Situación especial",
+                selected = situacion,
+                options = listOf("") + SITUACIONES_RA,
+                onSelect = { situacion = it },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (grupos.isNotEmpty()) {
+                val nombreSel = grupos.firstOrNull { it.first == familiaSel }?.second ?: "Sin grupo"
+                DropdownFieldRA(
+                    label = "Grupo familiar",
+                    selected = nombreSel,
+                    options = listOf("Sin grupo") + grupos.map { it.second },
+                    onSelect = { sel ->
+                        familiaSel = if (sel == "Sin grupo") null else grupos.firstOrNull { it.second == sel }?.first
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-                    Text("Cancelar")
-                }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancelar") }
                 Button(
                     onClick = {
-                        if (nombres.isNotBlank() && documento.isNotBlank()) {
-                            onConfirm(
-                                AfectadoLocal(
-                                    uuidAfectado = UUID.randomUUID().toString(),
-                                    uuidIncidencia = uuidIncidencia,
-                                    idCatalogoDoc = tipoDocIdx,
-                                    documentoIdentidad = documento.trim(),
-                                    nombres = nombres.trim(),
-                                    estadoSync = EstadoSync.NUEVO
-                                )
+                        errNombres = if (nombres.isBlank()) "Requerido" else null
+                        errEdad = if (edad.isBlank()) "Requerido" else null
+                        if (errNombres != null || errEdad != null) return@Button
+
+                        val familiaNombre = grupos.firstOrNull { it.first == familiaSel }?.second
+                        // Si la persona ya existía en backend, marcarla EDITADO; si es nueva, NUEVO.
+                        val nuevoEstadoSync =
+                            if (editing?.idAfectadoRemoto != null) EstadoSync.EDITADO else EstadoSync.NUEVO
+
+                        onSave(
+                            AfectadoLocal(
+                                uuidAfectado = editing?.uuidAfectado ?: UUID.randomUUID().toString(),
+                                uuidIncidencia = uuidIncidencia,
+                                idCatalogoDoc = tipoDocIdx,
+                                idAfectadoRemoto = editing?.idAfectadoRemoto,
+                                documentoIdentidad = documento.trim(),
+                                nombres = nombres.trim(),
+                                apellidoPaterno = apPaterno.trim().ifBlank { null },
+                                apellidoMaterno = apMaterno.trim().ifBlank { null },
+                                edad = edad.toIntOrNull(),
+                                genero = genero,
+                                celular = celular.trim().ifBlank { null },
+                                parentesco = parentesco.ifBlank { null },
+                                situacionActual = situacion.ifBlank { null },
+                                familiaId = familiaSel,
+                                familiaNombre = familiaNombre,
+                                estadoSync = nuevoEstadoSync
                             )
-                        }
+                        )
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = GREEN),
-                    enabled = nombres.isNotBlank() && documento.isNotBlank()
-                ) {
-                    Text("Guardar")
-                }
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) { Text("Guardar") }
+            }
+        }
+    }
+}
+
+// ── Diálogo: registrar grupo familiar ─────────────────────────────────────────
+@Composable
+private fun RegistrarGrupoDialog(
+    sugerido: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var nombre by remember { mutableStateOf(sugerido) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo grupo familiar") },
+        text = {
+            OutlinedTextField(
+                value = nombre,
+                onValueChange = { nombre = it },
+                label = { Text("Nombre / apellido de referencia") },
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (nombre.isNotBlank()) onConfirm(nombre.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = GREEN),
+                enabled = nombre.isNotBlank()
+            ) { Text("Crear") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Diálogo: observaciones del grupo familiar ─────────────────────────────────
+@Composable
+private fun ObsFamiliaDialog(
+    grupo: GrupoFamiliarLocal,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var obs by remember { mutableStateOf(grupo.observaciones ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Observaciones — ${grupo.nombre}") },
+        text = {
+            OutlinedTextField(
+                value = obs,
+                onValueChange = { obs = it },
+                placeholder = { Text("¿Qué necesita esta familia? Condiciones de la vivienda, apoyo urgente…") },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(obs.trim()) },
+                colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+            ) { Text("Guardar") }
+        },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
+// ── Dropdown reutilizable (tab Familias) ──────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DropdownFieldRA(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label, fontSize = 12.sp) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp)
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(if (opt.isBlank()) "—" else opt, fontSize = 14.sp) },
+                    onClick = { onSelect(opt); expanded = false }
+                )
             }
         }
     }

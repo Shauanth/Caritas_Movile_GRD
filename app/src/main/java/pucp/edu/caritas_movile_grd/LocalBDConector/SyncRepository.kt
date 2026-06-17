@@ -286,11 +286,17 @@ class SyncRepository(
         errores: MutableList<String>
     ): Boolean {
         return try {
+            val grupo = afectado.familiaId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { syncDao.getGrupoFamiliarPorId(it) }
+
             val responseAfectado = mobileSyncApi.sincronizarAfectado(
                 afectado.toMobilePayload(
                     incidencia = incidencia,
                     idIncidenciaRemota = idIncidenciaRemota,
-                    codigoCasoRemoto = codigoCasoRemoto
+                    codigoCasoRemoto = codigoCasoRemoto,
+                    observacionesGrupo = grupo?.observaciones,
+                    condicionFinal = if (grupo?.verificado == true) "VERIFICADO" else null
                 )
             )
 
@@ -508,7 +514,9 @@ private fun IncidenciaLocal.toMobilePayload(): JSONObject {
 private fun AfectadoLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
     idIncidenciaRemota: String,
-    codigoCasoRemoto: String?
+    codigoCasoRemoto: String?,
+    observacionesGrupo: String? = null,
+    condicionFinal: String? = null
 ): JSONObject {
     val apellidos = listOfNotNull(
         apellidoPaterno?.takeIf { it.isNotBlank() },
@@ -533,21 +541,42 @@ private fun AfectadoLocal.toMobilePayload(
 
         put("codigoGrupo", codigoGrupo)
         put("nombreReferencia", nombreReferencia)
+        putNullable("observacionesGrupo", observacionesGrupo)
+        putNullable("condicionFinal", condicionFinal)
 
-        put("tipoDocumento", idCatalogoDoc.toString())
+        // El backend guarda el tipo de documento como texto ("DNI"/"CE"/...),
+        // no como id de catálogo, para mantener consistencia con la web.
+        put("tipoDocumento", tipoDocumentoBackend(idCatalogoDoc))
         put("documentoIdentidad", documentoIdentidad)
         put("numeroDocumento", documentoIdentidad)
         put("nombres", nombres)
         putNullable("apellidos", apellidos.ifBlank { null })
 
-        putNullable("sexo", genero)
+        // La web normaliza el sexo a "M"/"F"; alineamos el payload para no
+        // generar valores distintos en grupo/persona al re-descargar.
+        putNullable("sexo", sexoBackend(genero))
         putNullable("parentesco", parentesco)
-        putNullable("condicionSalud", situacionActual)
+        // La situación especial es la "condición especial" en el modelo web.
+        putNullable("condicionEspecial", situacionActual)
         putNullable("telefono", celular)
-        putNullable("observaciones", situacionActual)
 
         put("esVulnerable", false)
     }
+}
+
+/** Convierte el id de catálogo de documento al texto que espera el backend. */
+private fun tipoDocumentoBackend(idCatalogoDoc: Int): String = when (idCatalogoDoc) {
+    1 -> "DNI"
+    2 -> "CE"
+    3 -> "Pasaporte"
+    else -> "Otro"
+}
+
+/** Normaliza el género del móvil al sexo "M"/"F" del backend (o null si no aplica). */
+private fun sexoBackend(genero: String?): String? = when (genero?.trim()?.lowercase()) {
+    "masculino", "m" -> "M"
+    "femenino", "f" -> "F"
+    else -> null
 }
 
 private fun EvidenciaLocal.toMobilePayload(

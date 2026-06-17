@@ -25,6 +25,7 @@ import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
         EntregaKitLocal::class,
         IncidenciaLocal::class,
         AfectadoLocal::class,
+        GrupoFamiliarLocal::class,
         EvidenciaLocal::class,
         ObservacionLocal::class,
         SeguimientoLocal::class,
@@ -34,7 +35,7 @@ import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
         AsignacionTerritorio::class,
         SimulacroLocal::class
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

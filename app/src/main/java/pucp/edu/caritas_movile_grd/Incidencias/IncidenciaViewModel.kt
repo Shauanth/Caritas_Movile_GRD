@@ -27,6 +27,27 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
             repository.guardarAfectado(afectado)
         }
     }
+
+    fun eliminarAfectado(uuidAfectado: String) {
+        viewModelScope.launch {
+            repository.eliminarAfectado(uuidAfectado)
+        }
+    }
+
+    fun getGruposFamiliares(uuidIncidencia: String) =
+        repository.getGruposFamiliares(uuidIncidencia)
+
+    fun guardarGrupoFamiliar(grupo: GrupoFamiliarLocal) {
+        viewModelScope.launch {
+            repository.guardarGrupoFamiliar(grupo)
+        }
+    }
+
+    fun eliminarGrupoFamiliar(uuidGrupo: String) {
+        viewModelScope.launch {
+            repository.eliminarGrupoFamiliar(uuidGrupo)
+        }
+    }
     fun guardarObservacion(observacion: ObservacionLocal) {
         viewModelScope.launch {
             repository.guardarObservacion(observacion)

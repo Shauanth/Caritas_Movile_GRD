@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
+import pucp.edu.caritas_movile_grd.Incidencias.GrupoFamiliarLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
@@ -86,6 +87,10 @@ interface SyncDao {
 
     @Query("SELECT * FROM incidencia_local WHERE uuidIncidencia = :uuidIncidencia LIMIT 1")
     suspend fun getIncidenciaPorUuid(uuidIncidencia: String): IncidenciaLocal?
+
+    // Grupo familiar local (para enviar las observaciones del grupo junto al afectado).
+    @Query("SELECT * FROM grupo_familiar_local WHERE uuidGrupo = :uuidGrupo LIMIT 1")
+    suspend fun getGrupoFamiliarPorId(uuidGrupo: String): GrupoFamiliarLocal?
 
     @Query("""
         SELECT * FROM observacion_local

@@ -63,6 +63,38 @@ fun EvidenciaScreen(
     viewModel: EvidenciaViewModel,
     onBack: () -> Unit
 ) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Evidencias") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        EvidenciaContent(
+            uuidReferencia = uuidReferencia,
+            viewModel = viewModel,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+
+/**
+ * Cuerpo reutilizable de captura de evidencias (cámara / galería / documento + lista).
+ * Se usa tanto en [EvidenciaScreen] (pantalla completa) como embebido en una pestaña
+ * (p. ej. el tab "Evidencias" del levantamiento de campo).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EvidenciaContent(
+    uuidReferencia: String,
+    viewModel: EvidenciaViewModel,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val evidencias by viewModel.getEvidencias(uuidReferencia).collectAsState(initial = emptyList())
     var showEvidenciaSheet by remember { mutableStateOf(false) }
@@ -101,30 +133,48 @@ fun EvidenciaScreen(
         if (granted) { val uri = crearUriCamara(context); cameraImageUri = uri; cameraLauncher.launch(uri) }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Evidencias") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
-                    }
+    Column(modifier = modifier.fillMaxSize()) {
+        // Recomendaciones éticas para la captura de evidencias en campo
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Recomendaciones", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF8D6E00))
                 }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showEvidenciaSheet = true }) {
-                Icon(Icons.Default.UploadFile, contentDescription = "Subir Evidencia")
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Evidencia daños o afectaciones sin vulnerar la dignidad de las personas. Evita exponer a menores o situaciones sensibles.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF6D5A00),
+                    lineHeight = 15.sp
+                )
             }
         }
-    ) { padding ->
+
+        Button(
+            onClick = { showEvidenciaSheet = true },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009850))
+        ) {
+            Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Agregar evidencia", fontWeight = FontWeight.SemiBold)
+        }
+
         if (evidencias.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No hay evidencias para esta incidencia", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(evidencias) { evidencia ->

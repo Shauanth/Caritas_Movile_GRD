@@ -26,6 +26,22 @@ interface IncidenciaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectado(afectado: AfectadoLocal)
 
+    @Query("DELETE FROM afectado_local WHERE uuidAfectado = :uuidAfectado")
+    suspend fun eliminarAfectado(uuidAfectado: String)
+
+    @Query("DELETE FROM afectado_local WHERE familiaId = :familiaId")
+    suspend fun eliminarAfectadosDeFamilia(familiaId: String)
+
+    // ── Grupos familiares ─────────────────────────────────────────────────────
+    @Query("SELECT * FROM grupo_familiar_local WHERE uuidIncidencia = :uuidIncidencia")
+    fun getGruposFamiliaresByIncidencia(uuidIncidencia: String): Flow<List<GrupoFamiliarLocal>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGrupoFamiliar(grupo: GrupoFamiliarLocal)
+
+    @Query("DELETE FROM grupo_familiar_local WHERE uuidGrupo = :uuidGrupo")
+    suspend fun eliminarGrupoFamiliar(uuidGrupo: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertObservacion(observacion: ObservacionLocal)
 

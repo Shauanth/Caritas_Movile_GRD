@@ -50,6 +50,20 @@ interface IncidenciaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectados(afectados: List<AfectadoLocal>)
+
+    // ── Familias (grupos familiares) ───────────────────────────────────────────
+    @Query("SELECT * FROM familia_local WHERE uuidIncidencia = :uuidIncidencia")
+    fun getFamiliasByIncidencia(uuidIncidencia: String): Flow<List<FamiliaLocal>>
+
+    @Query("SELECT * FROM familia_local WHERE familiaId = :familiaId LIMIT 1")
+    suspend fun getFamiliaById(familiaId: String): FamiliaLocal?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFamilia(familia: FamiliaLocal)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFamiliasIfNotExists(familias: List<FamiliaLocal>)
+
     @Query("""
         SELECT * FROM observacion_local
         WHERE uuidIncidencia = :uuidIncidencia

@@ -25,6 +25,20 @@ class IncidenciaRepository(
     fun getAfectados(uuidIncidencia: String): Flow<List<AfectadoLocal>> =
         incidenciaDao.getAfectadosByIncidencia(uuidIncidencia)
 
+    fun getFamilias(uuidIncidencia: String): Flow<List<FamiliaLocal>> =
+        incidenciaDao.getFamiliasByIncidencia(uuidIncidencia)
+
+    suspend fun guardarFamilia(familia: FamiliaLocal) {
+        val nuevoEstado = if (familia.estadoSync == EstadoSync.SINCRONIZADO)
+            EstadoSync.EDITADO else familia.estadoSync
+        incidenciaDao.insertFamilia(
+            familia.copy(
+                estadoSync = nuevoEstado,
+                fechaUltimaModificacion = System.currentTimeMillis()
+            )
+        )
+    }
+
     suspend fun guardarIncidencia(incidencia: IncidenciaLocal) {
         incidenciaDao.insertIncidencia(incidencia)
     }
@@ -84,6 +98,7 @@ class IncidenciaRepository(
 
             val incidencias = mutableListOf<IncidenciaLocal>()
             val afectados = mutableListOf<AfectadoLocal>()
+            val familias = mutableListOf<FamiliaLocal>()
             val observaciones = mutableListOf<ObservacionLocal>()
 
             for (i in 0 until items.length()) {
@@ -118,6 +133,11 @@ class IncidenciaRepository(
                 )
 
                 afectados.addAll(afectadosLocales)
+                familias.addAll(
+                    incidenciaJson.toFamiliasLocalesAsignadas(
+                        uuidIncidenciaLocal = incidenciaLocal.uuidIncidencia
+                    )
+                )
                 val observacionesLocales = incidenciaJson.toObservacionesLocalesAsignadas(
                     uuidIncidenciaLocal = incidenciaLocal.uuidIncidencia
                 )
@@ -146,6 +166,11 @@ class IncidenciaRepository(
             if (afectados.isNotEmpty()) {
                 incidenciaDao.insertAfectados(afectados)
                 Log.d(TAG_ASIGNADAS, "Afectados insertados en Room=${afectados.size}")
+            }
+            if (familias.isNotEmpty()) {
+                // IGNORE: no pisar comentarios editados localmente (NUEVO/EDITADO)
+                incidenciaDao.insertFamiliasIfNotExists(familias)
+                Log.d(TAG_ASIGNADAS, "Familias insertadas en Room=${familias.size}")
             }
             if (observaciones.isNotEmpty()) {
                 incidenciaDao.insertObservaciones(observaciones)
@@ -334,6 +359,37 @@ private fun JSONObject.toAfectadosLocalesAsignados(
     }
 
     return afectados
+}
+
+private fun JSONObject.toFamiliasLocalesAsignadas(
+    uuidIncidenciaLocal: String
+): List<FamiliaLocal> {
+    val grupos = optJSONArray("gruposFamiliares") ?: return emptyList()
+    val familias = mutableListOf<FamiliaLocal>()
+
+    for (i in 0 until grupos.length()) {
+        val grupo = grupos.optJSONObject(i) ?: continue
+
+        // Misma resolución que toAfectadosLocalesAsignados para que el enlace coincida
+        val familiaId = grupo.optStringOrNull("uuidMovil")
+            ?: grupo.optStringOrNull("idGrupoFamiliar")
+            ?: grupo.optStringOrNull("codigoGrupo")
+            ?: continue
+
+        familias.add(
+            FamiliaLocal(
+                familiaId = familiaId,
+                uuidIncidencia = uuidIncidenciaLocal,
+                nombreReferencia = grupo.optStringOrNull("nombreReferencia")
+                    ?: "Grupo Familiar ${i + 1}",
+                comentario = grupo.optStringOrNull("observaciones"),
+                idFamiliaRemota = grupo.optStringOrNull("idGrupoFamiliar"),
+                estadoSync = EstadoSync.SINCRONIZADO
+            )
+        )
+    }
+
+    return familias
 }
 
 private fun JSONObject.toObservacionesLocalesAsignadas(

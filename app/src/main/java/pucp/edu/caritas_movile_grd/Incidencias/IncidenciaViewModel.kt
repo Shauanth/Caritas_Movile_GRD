@@ -32,6 +32,12 @@ class IncidenciaViewModel(private val repository: IncidenciaRepository) : ViewMo
 
     fun getAfectados(uuidIncidencia: String) = repository.getAfectados(uuidIncidencia)
 
+    fun getFamilias(uuidIncidencia: String) = repository.getFamilias(uuidIncidencia)
+
+    fun guardarFamilia(familia: FamiliaLocal) {
+        viewModelScope.launch { repository.guardarFamilia(familia) }
+    }
+
     fun guardarAfectado(afectado: AfectadoLocal) {
         viewModelScope.launch { repository.guardarAfectado(afectado) }
     }

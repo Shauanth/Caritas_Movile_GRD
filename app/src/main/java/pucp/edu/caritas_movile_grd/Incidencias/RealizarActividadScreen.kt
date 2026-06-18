@@ -57,7 +57,8 @@ fun RealizarActividadScreen(
     viewModel: IncidenciaViewModel,
     syncViewModel: SyncViewModel,
     kitViewModel: KitViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    idUsuarioActual: String = MobileApiConfig.MOBILE_SYNC_USER_ID
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
     val incidencia = incidencias.find { it.uuidIncidencia == uuidIncidencia }
@@ -78,8 +79,8 @@ fun RealizarActividadScreen(
     var showFinalizarDialog by remember { mutableStateOf(false) }
 
     val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO" &&
-        (incidencia.idResponsableGRD == MobileApiConfig.MOBILE_SYNC_USER_ID ||
-         incidencia.uuidUsuario == MobileApiConfig.MOBILE_SYNC_USER_ID)
+        (incidencia.idResponsableGRD == idUsuarioActual ||
+         incidencia.uuidUsuario == idUsuarioActual)
 
     Scaffold(
         topBar = {

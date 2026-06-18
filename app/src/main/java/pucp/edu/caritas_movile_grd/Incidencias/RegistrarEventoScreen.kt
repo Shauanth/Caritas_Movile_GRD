@@ -130,7 +130,8 @@ private fun calcularResumen(personas: List<PendingPersona>, familias: List<Pendi
 fun RegistrarEventoScreen(
     masterViewModel: MasterViewModel,
     onBack: () -> Unit,
-    onSave: (IncidenciaLocal, List<AfectadoLocal>) -> Unit
+    onSave: (IncidenciaLocal, List<AfectadoLocal>) -> Unit,
+    idUsuarioActual: String = MobileApiConfig.MOBILE_SYNC_USER_ID
 ){
     // Datos generales
     var dniReporte       by remember { mutableStateOf("") }
@@ -339,7 +340,7 @@ fun RegistrarEventoScreen(
                             }.joinToString(", ")                         
                             val incidencia = IncidenciaLocal(
                                 uuidIncidencia          = uuidNuevo,
-                                uuidUsuario = MobileApiConfig.MOBILE_SYNC_USER_ID,
+                                uuidUsuario = idUsuarioActual,
                                 idParroquia             = 1,
                                 idCatalogoTipo          = selectedCatId,
                                 tipoEventoNombre        = tipoEventoSeleccionado,

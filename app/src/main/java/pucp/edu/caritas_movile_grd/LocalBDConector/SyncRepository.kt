@@ -21,6 +21,8 @@ import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 import pucp.edu.caritas_movile_grd.Kits.KitDao
 import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
 import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroDao
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
 data class SyncResult(
     val incidenciasSincronizadas: Int,
     val afectadosSincronizados: Int,
@@ -28,12 +30,15 @@ data class SyncResult(
     val observacionesSincronizadas: Int,
     val seguimientosSincronizados: Int,
     val entregasSincronizadas: Int,
+    val simulacrosSincronizados: Int,
+    val simulacrosDescargados: Int,
     val errores: List<String>
 )
 
 class SyncRepository(
     private val syncDao: SyncDao,
     private val kitDao: KitDao,
+    private val simulacroDao: SimulacroDao,
     private val appContext: Context,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
@@ -45,7 +50,10 @@ class SyncRepository(
         var observacionesSincronizadas = 0
         var seguimientosSincronizados = 0
         var entregasSincronizadas = 0
+        var simulacrosSincronizados = 0
+        var simulacrosDescargados = 0
         val errores = mutableListOf<String>()
+        val simulacroRepository = SimulacroRepository(simulacroDao, mobileSyncApi)
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
         val avancesKitsSincronizados = sincronizarAvancesKitsAsignados(errores)
@@ -322,6 +330,20 @@ class SyncRepository(
             Log.e("SyncRepository", "Error descargando incidencias", e)
             errores.add("No se pudieron descargar incidencias: ${e.message}")
         }
+        // 8. Sincronizar ejecuciones de simulacros y refrescar asignaciones.
+        try {
+            simulacrosSincronizados = simulacroRepository.sincronizarSimulacrosPendientes()
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error sincronizando simulacros", e)
+            errores.add("No se pudieron sincronizar simulacros: ${e.message}")
+        }
+
+        try {
+            simulacrosDescargados = simulacroRepository.descargarSimulacrosDesdeBackend()
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error descargando simulacros", e)
+            errores.add("No se pudieron descargar simulacros: ${e.message}")
+        }
 
         return SyncResult(
             incidenciasSincronizadas = incidenciasSincronizadas,
@@ -330,6 +352,8 @@ class SyncRepository(
             observacionesSincronizadas = observacionesSincronizadas,
             seguimientosSincronizados = seguimientosSincronizados,
             entregasSincronizadas = entregasSincronizadas,
+            simulacrosSincronizados = simulacrosSincronizados,
+            simulacrosDescargados = simulacrosDescargados,
             errores = errores
         )
     }

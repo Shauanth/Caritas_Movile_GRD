@@ -35,7 +35,10 @@ class SyncViewModel(
                     append("${result.afectadosSincronizados} afectado(s), ")
                     append("${result.evidenciasSincronizadas} evidencia(s), ")
                     append("${result.observacionesSincronizadas} observación(es) y ")
-                    append("${result.seguimientosSincronizados} seguimiento(s) sincronizado(s).")
+                    append("${result.seguimientosSincronizados} seguimiento(s), ")
+                    append("${result.entregasSincronizadas} entrega(s) y ")
+                    append("${result.simulacrosSincronizados} simulacro(s) sincronizado(s). ")
+                    append("${result.simulacrosDescargados} simulacro(s) descargado(s).")
                 }
 
                 val errores = if (result.errores.isNotEmpty()) {

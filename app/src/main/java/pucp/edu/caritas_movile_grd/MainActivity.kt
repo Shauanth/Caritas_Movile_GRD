@@ -59,7 +59,10 @@ fun AppNavigation() {
     val context = LocalContext.current
     val database = AppDatabase.getDatabase(context)
 
-    val incidenciaRepository = IncidenciaRepository(database.incidenciaDao())
+    val incidenciaRepository = IncidenciaRepository(
+        incidenciaDao = database.incidenciaDao(),
+        loginDao = database.loginDao()
+    )
     val evidenciaRepository = EvidenciaRepository(database.evidenciaDao())
     val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
@@ -74,6 +77,7 @@ fun AppNavigation() {
     val syncRepository = SyncRepository(
         syncDao = database.syncDao(),
         kitDao = database.kitDao(),
+        simulacroDao = database.simulacroDao(),
         loginDao = database.loginDao(),
         appContext = context.applicationContext
     )
@@ -143,7 +147,9 @@ fun AppNavigation() {
             RegistrarEventoScreen(
                 masterViewModel = masterViewModel,
                 onBack = { navController.popBackStack() },
-                idUsuarioActual = perfilActualReg?.uuidUsuario ?: pucp.edu.caritas_movile_grd.Network.MobileApiConfig.MOBILE_SYNC_USER_ID,
+                idUsuarioActual = perfilActualReg?.uuidUsuario
+                    ?: perfilActualReg?.idUsuarioRemoto
+                    ?: "",
                 onSave = { incidencia, afectados ->
                     viewModel.guardarIncidencia(incidencia)
                     afectados.forEach { viewModel.guardarAfectado(it) }
@@ -160,7 +166,9 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
             val perfilActual by loginViewModel.perfil.collectAsState()
-            val idUsuarioActual = perfilActual?.uuidUsuario ?: pucp.edu.caritas_movile_grd.Network.MobileApiConfig.MOBILE_SYNC_USER_ID
+            val idUsuarioActual = perfilActual?.uuidUsuario
+                ?: perfilActual?.idUsuarioRemoto
+                ?: ""
             RealizarActividadScreen(
                 uuidIncidencia = uuid,
                 viewModel = viewModel,

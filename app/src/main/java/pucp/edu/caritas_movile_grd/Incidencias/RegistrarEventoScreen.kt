@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import pucp.edu.caritas_movile_grd.Masters.MasterViewModel
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.util.*
 
 // ── Catálogos ────────────────────────────────────────────────────────────────
@@ -131,7 +130,7 @@ fun RegistrarEventoScreen(
     masterViewModel: MasterViewModel,
     onBack: () -> Unit,
     onSave: (IncidenciaLocal, List<AfectadoLocal>) -> Unit,
-    idUsuarioActual: String = MobileApiConfig.MOBILE_SYNC_USER_ID
+    idUsuarioActual: String = ""
 ){
     // Datos generales
     var dniReporte       by remember { mutableStateOf("") }

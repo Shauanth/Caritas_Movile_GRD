@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.*
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
@@ -58,7 +57,7 @@ fun RealizarActividadScreen(
     syncViewModel: SyncViewModel,
     kitViewModel: KitViewModel,
     onBack: () -> Unit,
-    idUsuarioActual: String = MobileApiConfig.MOBILE_SYNC_USER_ID
+    idUsuarioActual: String = ""
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
     val incidencia = incidencias.find { it.uuidIncidencia == uuidIncidencia }
@@ -1705,6 +1704,7 @@ private fun KitsTab(
     val kitsAsignados by kitViewModel
         .getKitsAsignadosPorIncidencia(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
+    val kitsEntregaHabilitada = kitsAsignados.firstOrNull()?.kitsEntregaHabilitada == true
 
     if (kitsAsignados.isEmpty()) {
         Box(
@@ -1749,12 +1749,20 @@ private fun KitsTab(
     ) {
         item {
             Text(
-                "Kits asignados por el especialista",
+                if (kitsEntregaHabilitada) {
+                    "Kits asignados por el especialista"
+                } else {
+                    "Kits propuestos por el especialista"
+                },
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
             )
             Text(
-                "Confirma los artículos entregados y registra la evidencia de entrega.",
+                if (kitsEntregaHabilitada) {
+                    "Confirma los artículos entregados y registra la evidencia de entrega."
+                } else {
+                    "Pendiente de aprobación del Comité"
+                },
                 color = Color.Gray,
                 fontSize = 12.sp
             )
@@ -1857,11 +1865,15 @@ private fun KitAsignadoCard(
                         ) {
                             Checkbox(
                                 checked = articulo.confirmado,
-                                onCheckedChange = { checked ->
-                                    kitViewModel.actualizarConfirmacionArticulo(
-                                        articulo = articulo,
-                                        confirmado = checked
-                                    )
+                                onCheckedChange = if (kit.kitsEntregaHabilitada) {
+                                    { checked ->
+                                        kitViewModel.actualizarConfirmacionArticulo(
+                                            articulo = articulo,
+                                            confirmado = checked
+                                        )
+                                    }
+                                } else {
+                                    null
                                 }
                             )
 
@@ -1888,6 +1900,33 @@ private fun KitAsignadoCard(
                 }
             }
 
+            if (!kit.kitsEntregaHabilitada) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFFFF7E6)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color(0xFFB26A00),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            "Pendiente de aprobación del Comité",
+                            color = Color(0xFF7A4A00),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = descripcionEntrega,
                 onValueChange = { descripcionEntrega = it },
@@ -1898,6 +1937,7 @@ private fun KitAsignadoCard(
                 },
                 minLines = 2,
                 maxLines = 4,
+                enabled = kit.kitsEntregaHabilitada,
                 shape = RoundedCornerShape(10.dp)
             )
 
@@ -1914,7 +1954,8 @@ private fun KitAsignadoCard(
                             estadoEntrega = "PARCIAL"
                         )
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    enabled = kit.kitsEntregaHabilitada
                 ) {
                     Text("Guardar parcial")
                 }
@@ -1928,6 +1969,7 @@ private fun KitAsignadoCard(
                         )
                     },
                     modifier = Modifier.weight(1f),
+                    enabled = kit.kitsEntregaHabilitada,
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN)
                 ) {
                     Text("Marcar entregado")

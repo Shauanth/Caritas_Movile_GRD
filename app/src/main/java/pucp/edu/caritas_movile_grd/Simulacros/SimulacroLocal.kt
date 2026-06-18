@@ -7,15 +7,31 @@ import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 @Entity(tableName = "simulacro_local")
 data class SimulacroLocal(
     @PrimaryKey val uuidSimulacro: String,
-    val idSimulacroRemoto: Int? = null,
-    val tipo: String,              // "Sismo", "Incendio", "Inundación", "Evacuación"
-    val parroquia: String,
-    val fecha: Long,               // timestamp
-    val descripcion: String = "",
-    val estado: String,            // "Programada", "Asignada", "Ejecutada", "Observada", "Validada"
-    val indicaciones: String = "",
-    val notasBrigadista: String = "",
-    val comentarioObservacion: String = "",
-    val brigadistaAsignado: String = "",
-    val estadoSync: EstadoSync = EstadoSync.NUEVO
+    val idActividadPreventivaRemota: String? = null,
+    val codigoActividad: String? = null,
+    val estadoActividad: String = "PROGRAMADA",
+    val idParroquia: String? = null,
+    val parroquiaNombre: String? = null,
+    val tipoActividadPreventiva: String? = null,
+    val nombreActividad: String = "",
+    val fechaProgramada: String? = null,
+    val horarioInicio: String? = null,
+    val horarioFin: String? = null,
+    val lugarActividad: String? = null,
+    val publicoObjetivo: String? = null,
+    val numeroParticipantesEstimado: Int? = null,
+    val numeroParticipantesReal: Int? = null,
+    val descripcionActividad: String? = null,
+    val resultadoGeneral: String? = null,
+    val recomendaciones: String? = null,
+    val observaciones: String? = null,
+    val indicacionesEquipo: String? = null,
+    val reporteBrigadista: String? = null,
+    val duracionSimulacro: Int? = null,
+    val fechaEjecucion: String? = null,
+    val updatedAtRemoto: String? = null,
+    val idBrigadistaParroquialResponsable: String? = null,
+    val idUsuarioGRDResponsable: String? = null,
+    val nombreResponsable: String? = null,
+    val estadoSync: EstadoSync = EstadoSync.SINCRONIZADO
 )

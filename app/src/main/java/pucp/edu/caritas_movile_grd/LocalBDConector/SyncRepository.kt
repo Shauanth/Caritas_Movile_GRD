@@ -11,7 +11,6 @@ import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Network.MobileSyncApi
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,6 +20,8 @@ import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 import pucp.edu.caritas_movile_grd.Kits.KitDao
 import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
 import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroDao
+import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
 import pucp.edu.caritas_movile_grd.login.LoginDao
 import kotlinx.coroutines.flow.firstOrNull
 data class SyncResult(
@@ -30,21 +31,28 @@ data class SyncResult(
     val observacionesSincronizadas: Int,
     val seguimientosSincronizados: Int,
     val entregasSincronizadas: Int,
+    val simulacrosSincronizados: Int,
+    val simulacrosDescargados: Int,
     val errores: List<String>
 )
 
 class SyncRepository(
     private val syncDao: SyncDao,
     private val kitDao: KitDao,
+    private val simulacroDao: SimulacroDao,
     private val loginDao: LoginDao,
     private val appContext: Context,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
 
-    private suspend fun getUserId(): String =
-        loginDao.getPerfilUsuario().firstOrNull()?.uuidUsuario
-            ?: MobileApiConfig.MOBILE_SYNC_USER_ID
+    private suspend fun obtenerIdUsuarioGRDActual(): String {
+        val perfil = loginDao.getPerfilUsuario().firstOrNull()
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
 
+        return perfil.uuidUsuario.takeIf { it.isNotBlank() }
+            ?: perfil.idUsuarioRemoto?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
+    }
 
     suspend fun sincronizarPendientes(): SyncResult {
         var incidenciasSincronizadas = 0
@@ -53,8 +61,11 @@ class SyncRepository(
         var observacionesSincronizadas = 0
         var seguimientosSincronizados = 0
         var entregasSincronizadas = 0
+        var simulacrosSincronizados = 0
+        var simulacrosDescargados = 0
         val errores = mutableListOf<String>()
-        val userId = getUserId()
+        val userId = obtenerIdUsuarioGRDActual()
+        val simulacroRepository = SimulacroRepository(simulacroDao, mobileSyncApi)
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
         val avancesKitsSincronizados = sincronizarAvancesKitsAsignados(errores, userId)
@@ -335,6 +346,20 @@ class SyncRepository(
             Log.e("SyncRepository", "Error descargando incidencias", e)
             errores.add("No se pudieron descargar incidencias: ${e.message}")
         }
+        // 8. Sincronizar ejecuciones de simulacros y refrescar asignaciones.
+        try {
+            simulacrosSincronizados = simulacroRepository.sincronizarSimulacrosPendientes(userId)
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error sincronizando simulacros", e)
+            errores.add("No se pudieron sincronizar simulacros: ${e.message}")
+        }
+
+        try {
+            simulacrosDescargados = simulacroRepository.descargarSimulacrosDesdeBackend()
+        } catch (e: Exception) {
+            Log.e("SyncRepository", "Error descargando simulacros", e)
+            errores.add("No se pudieron descargar simulacros: ${e.message}")
+        }
 
         return SyncResult(
             incidenciasSincronizadas = incidenciasSincronizadas,
@@ -343,6 +368,8 @@ class SyncRepository(
             observacionesSincronizadas = observacionesSincronizadas,
             seguimientosSincronizados = seguimientosSincronizados,
             entregasSincronizadas = entregasSincronizadas,
+            simulacrosSincronizados = simulacrosSincronizados,
+            simulacrosDescargados = simulacrosDescargados,
             errores = errores
         )
     }
@@ -352,6 +379,16 @@ class SyncRepository(
         idUsuario: String
     ): Int {
         val kitsPendientes = kitDao.getKitsAsignadosPendientesSync()
+            .filter { kit ->
+                if (!kit.kitsEntregaHabilitada) {
+                    errores.add(
+                        "Kit ${kit.tipoKit} pendiente de aprobación del Comité. No se sincronizó la entrega."
+                    )
+                    false
+                } else {
+                    true
+                }
+            }
 
         if (kitsPendientes.isEmpty()) return 0
 
@@ -442,8 +479,11 @@ class SyncRepository(
 
         return sincronizados
     }
-    suspend fun descargarIncidenciasDelServidor(idUsuario: String = MobileApiConfig.MOBILE_SYNC_USER_ID) {
-        val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuario)
+    suspend fun descargarIncidenciasDelServidor(idUsuario: String? = null) {
+        val idUsuarioActual = idUsuario?.takeIf { it.isNotBlank() }
+            ?: obtenerIdUsuarioGRDActual()
+
+        val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuarioActual)
         val items = response.optJSONArray("incidencias") ?: return
         val incidencias = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal>()
 
@@ -468,7 +508,7 @@ class SyncRepository(
                 pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal(
                     uuidIncidencia          = uuid,
                     idIncidenciaRemota      = idRemoto,
-                    uuidUsuario             = idUsuario,
+                    uuidUsuario             = idUsuarioActual,
                     idParroquia             = 1,
                     idCatalogoTipo          = 1,
                     tipoEventoNombre        = tipoEvento,
@@ -539,6 +579,7 @@ class SyncRepository(
 
             val uuidIncidencia = mapaIdRemotoAUuid[idRemoto] ?: continue
             val kitsJson = wrapper.optJSONArray("kitsAsignados") ?: continue
+            val kitsEntregaHabilitada = obtenerKitsEntregaHabilitada(wrapper, inc)
 
             for (k in 0 until kitsJson.length()) {
                 val kitJson = kitsJson.optJSONObject(k) ?: continue
@@ -564,6 +605,7 @@ class SyncRepository(
                             .takeIf { it.isNotBlank() && it != "null" },
                         tipoKit = tipoKit,
                         estadoEntrega = "PENDIENTE",
+                        kitsEntregaHabilitada = kitsEntregaHabilitada,
                         estadoSync = EstadoSync.SINCRONIZADO
                     )
                 )
@@ -1100,6 +1142,30 @@ private fun EvidenciaLocal.toMobilePayload(
             put("urlArchivo", urlArchivoSeguro)
         }
     }
+}
+
+private fun obtenerKitsEntregaHabilitada(
+    wrapper: JSONObject,
+    incidencia: JSONObject
+): Boolean {
+    return when {
+        wrapper.has("kitsEntregaHabilitada") && !wrapper.isNull("kitsEntregaHabilitada") ->
+            wrapper.optBoolean("kitsEntregaHabilitada", false)
+        incidencia.has("kitsEntregaHabilitada") && !incidencia.isNull("kitsEntregaHabilitada") ->
+            incidencia.optBoolean("kitsEntregaHabilitada", false)
+        else -> estadoPermiteEntregaKits(incidencia.optString("estadoActual"))
+    }
+}
+
+private fun estadoPermiteEntregaKits(estadoActual: String?): Boolean {
+    return estadoActual
+        ?.trim()
+        ?.uppercase(Locale.ROOT) in setOf(
+        "APROBADO",
+        "ATENDIDO",
+        "SEGUIMIENTO ABIERTO",
+        "CERRADO"
+    )
 }
 
 private fun EntregaKitLocal.toMobilePayload(

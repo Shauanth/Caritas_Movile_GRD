@@ -22,6 +22,7 @@ data class KitAsignadoLocal(
 
     // Estado local de entrega
     val estadoEntrega: String = "PENDIENTE", // PENDIENTE, PARCIAL, ENTREGADO
+    val kitsEntregaHabilitada: Boolean = false,
 
     val fechaAsignacion: Long = System.currentTimeMillis(),
     val fechaEntrega: Long? = null,

@@ -55,6 +55,8 @@ class KitRepository(private val kitDao: KitDao) {
         evidenciaLocalUri: String?,
         estadoEntrega: String
     ) {
+        if (!kit.kitsEntregaHabilitada) return
+
         kitDao.marcarKitEntregado(
             uuidKitAsignado = kit.uuidKitAsignado,
             estadoEntrega = estadoEntrega,
@@ -70,6 +72,8 @@ class KitRepository(private val kitDao: KitDao) {
         descripcionEntrega: String?,
         evidenciaLocalUri: String? = null
     ) {
+        if (!kit.kitsEntregaHabilitada) return
+
         kitDao.marcarTodosArticulosDeKitEntregados(
             uuidKitAsignado = kit.uuidKitAsignado
         )

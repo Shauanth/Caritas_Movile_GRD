@@ -379,6 +379,16 @@ class SyncRepository(
         idUsuario: String
     ): Int {
         val kitsPendientes = kitDao.getKitsAsignadosPendientesSync()
+            .filter { kit ->
+                if (!kit.kitsEntregaHabilitada) {
+                    errores.add(
+                        "Kit ${kit.tipoKit} pendiente de aprobación del Comité. No se sincronizó la entrega."
+                    )
+                    false
+                } else {
+                    true
+                }
+            }
 
         if (kitsPendientes.isEmpty()) return 0
 
@@ -569,6 +579,7 @@ class SyncRepository(
 
             val uuidIncidencia = mapaIdRemotoAUuid[idRemoto] ?: continue
             val kitsJson = wrapper.optJSONArray("kitsAsignados") ?: continue
+            val kitsEntregaHabilitada = obtenerKitsEntregaHabilitada(wrapper, inc)
 
             for (k in 0 until kitsJson.length()) {
                 val kitJson = kitsJson.optJSONObject(k) ?: continue
@@ -594,6 +605,7 @@ class SyncRepository(
                             .takeIf { it.isNotBlank() && it != "null" },
                         tipoKit = tipoKit,
                         estadoEntrega = "PENDIENTE",
+                        kitsEntregaHabilitada = kitsEntregaHabilitada,
                         estadoSync = EstadoSync.SINCRONIZADO
                     )
                 )
@@ -1130,6 +1142,30 @@ private fun EvidenciaLocal.toMobilePayload(
             put("urlArchivo", urlArchivoSeguro)
         }
     }
+}
+
+private fun obtenerKitsEntregaHabilitada(
+    wrapper: JSONObject,
+    incidencia: JSONObject
+): Boolean {
+    return when {
+        wrapper.has("kitsEntregaHabilitada") && !wrapper.isNull("kitsEntregaHabilitada") ->
+            wrapper.optBoolean("kitsEntregaHabilitada", false)
+        incidencia.has("kitsEntregaHabilitada") && !incidencia.isNull("kitsEntregaHabilitada") ->
+            incidencia.optBoolean("kitsEntregaHabilitada", false)
+        else -> estadoPermiteEntregaKits(incidencia.optString("estadoActual"))
+    }
+}
+
+private fun estadoPermiteEntregaKits(estadoActual: String?): Boolean {
+    return estadoActual
+        ?.trim()
+        ?.uppercase(Locale.ROOT) in setOf(
+        "APROBADO",
+        "ATENDIDO",
+        "SEGUIMIENTO ABIERTO",
+        "CERRADO"
+    )
 }
 
 private fun EntregaKitLocal.toMobilePayload(

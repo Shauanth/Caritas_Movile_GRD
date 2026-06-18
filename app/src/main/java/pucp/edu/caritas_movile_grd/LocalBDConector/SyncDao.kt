@@ -131,6 +131,12 @@ interface SyncDao {
     @Query("SELECT * FROM evidencia_local WHERE estadoSync = 'PENDIENTE_ELIMINACION'")
     suspend fun getEvidenciasPendientesEliminacion(): List<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>
 
+    @Query("SELECT * FROM afectado_local WHERE estadoSync = 'PENDIENTE_ELIMINACION' AND idAfectadoRemoto IS NOT NULL")
+    suspend fun getAfectadosPendientesEliminacion(): List<pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal>
+
+    @Query("DELETE FROM afectado_local WHERE uuidAfectado = :uuidAfectado")
+    suspend fun deleteAfectadoByUuid(uuidAfectado: String)
+
     @Query("DELETE FROM evidencia_local WHERE uuidEvidencia = :uuidEvidencia")
     suspend fun deleteEvidenciaByUuid(uuidEvidencia: String)
 

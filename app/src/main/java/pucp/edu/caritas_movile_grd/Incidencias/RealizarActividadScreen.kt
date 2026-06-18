@@ -1648,13 +1648,16 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
             }
         }
 
-        FloatingActionButton(
-            onClick = { showSheet = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = GREEN,
-            contentColor = Color.White
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+        val estadoCerrado = incidencia.estado.uppercase() in setOf("CERRADA", "CERRADO", "CANCELADA", "CANCELADO", "ANULADA", "ANULADO")
+        if (!estadoCerrado) {
+            FloatingActionButton(
+                onClick = { showSheet = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                containerColor = GREEN,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+            }
         }
     }
 

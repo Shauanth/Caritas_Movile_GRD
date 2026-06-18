@@ -540,8 +540,10 @@ fun IncidenciaCard(
                 ) {
                     Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
+                val estadoCerrado = incidencia.estado.uppercase() in setOf("CERRADA", "CERRADO", "CANCELADA", "CANCELADO", "ANULADA", "ANULADO")
                 OutlinedButton(
                     onClick = onSubirEvidencia,
+                    enabled = !estadoCerrado,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))

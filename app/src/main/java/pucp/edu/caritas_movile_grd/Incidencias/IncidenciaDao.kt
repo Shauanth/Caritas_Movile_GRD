@@ -33,6 +33,9 @@ interface IncidenciaDao {
     @Delete
     suspend fun deleteAfectado(afectado: AfectadoLocal)
 
+    @Query("UPDATE afectado_local SET estadoSync = 'PENDIENTE_ELIMINACION' WHERE uuidAfectado = :uuidAfectado")
+    suspend fun marcarAfectadoParaEliminar(uuidAfectado: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertObservacion(observacion: ObservacionLocal)
 

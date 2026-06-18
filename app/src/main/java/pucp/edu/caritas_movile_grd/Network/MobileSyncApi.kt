@@ -67,6 +67,7 @@ class MobileSyncApi(
                 connectTimeout = 20_000
                 readTimeout = 60_000
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("x-mobile-sync-key", MobileApiConfig.MOBILE_SYNC_API_KEY)
             }
 
             try {
@@ -110,6 +111,7 @@ class MobileSyncApi(
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("x-mobile-sync-key", MobileApiConfig.MOBILE_SYNC_API_KEY)
             }
 
             try {

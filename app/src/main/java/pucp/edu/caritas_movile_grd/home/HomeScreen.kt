@@ -34,6 +34,10 @@ fun MainScreen(
     val syncState by syncViewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(Unit) {
+        syncViewModel.sincronizarPendientes()
+    }
+
     LaunchedEffect(syncState.lastMessage, syncState.lastError) {
         val mensaje = syncState.lastError ?: syncState.lastMessage
 

@@ -5,12 +5,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import pucp.edu.caritas_movile_grd.login.LoginScreen
+import pucp.edu.caritas_movile_grd.login.LoginViewModel
+import pucp.edu.caritas_movile_grd.login.LoginRepository
 import pucp.edu.caritas_movile_grd.home.MainScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaScreen
 import pucp.edu.caritas_movile_grd.Incidencias.RegistrarEventoScreen
@@ -61,10 +66,16 @@ fun AppNavigation() {
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
     val masterRepository = MasterRepository(database.masterDao())
 
+    val loginRepository = LoginRepository(database.loginDao())
+    val loginViewModel: LoginViewModel = viewModel(
+        factory = GenericViewModelFactory { LoginViewModel(loginRepository) }
+    )
+
     val syncRepository = SyncRepository(
         syncDao = database.syncDao(),
         kitDao = database.kitDao(),
         simulacroDao = database.simulacroDao(),
+        loginDao = database.loginDao(),
         appContext = context.applicationContext
     )
 
@@ -72,13 +83,26 @@ fun AppNavigation() {
         factory = GenericViewModelFactory { SyncViewModel(syncRepository) }
     )
 
+    val perfilInicial by loginViewModel.perfil.collectAsState()
+
+    LaunchedEffect(perfilInicial) {
+        if (perfilInicial != null && loginViewModel.sesionVigente()) {
+            navController.navigate("main") {
+                popUpTo("login") { inclusive = true }
+            }
+        }
+    }
+
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
-            LoginScreen(onLoginSuccess = { _ ->
-                navController.navigate("main") {
-                    popUpTo("login") { inclusive = true }
+            LoginScreen(
+                viewModel = loginViewModel,
+                onLoginSuccess = { _ ->
+                    navController.navigate("main") {
+                        popUpTo("login") { inclusive = true }
+                    }
                 }
-            })
+            )
         }
         composable("main") {
             val incidenciaViewModel: IncidenciaViewModel = viewModel(
@@ -100,6 +124,7 @@ fun AppNavigation() {
                 onSubirEvidencia = { uuid -> navController.navigate("subir_evidencia/$uuid") },
                 onEntregaKits = { navController.navigate("entrega_kits") },
                 onLogout = {
+                    loginViewModel.logout()
                     navController.navigate("login") {
                         popUpTo("main") { inclusive = true }
                     }
@@ -115,9 +140,11 @@ fun AppNavigation() {
                 factory = GenericViewModelFactory { MasterViewModel(masterRepository) }
             )
 
+            val perfilActualReg by loginViewModel.perfil.collectAsState()
             RegistrarEventoScreen(
                 masterViewModel = masterViewModel,
                 onBack = { navController.popBackStack() },
+                idUsuarioActual = perfilActualReg?.uuidUsuario ?: pucp.edu.caritas_movile_grd.Network.MobileApiConfig.MOBILE_SYNC_USER_ID,
                 onSave = { incidencia, afectados ->
                     viewModel.guardarIncidencia(incidencia)
                     afectados.forEach { viewModel.guardarAfectado(it) }
@@ -133,11 +160,14 @@ fun AppNavigation() {
             val kitVm: KitViewModel = viewModel(
                 factory = GenericViewModelFactory { KitViewModel(kitRepository) }
             )
+            val perfilActual by loginViewModel.perfil.collectAsState()
+            val idUsuarioActual = perfilActual?.uuidUsuario ?: pucp.edu.caritas_movile_grd.Network.MobileApiConfig.MOBILE_SYNC_USER_ID
             RealizarActividadScreen(
                 uuidIncidencia = uuid,
                 viewModel = viewModel,
                 syncViewModel = syncViewModel,
                 kitViewModel = kitVm,
+                idUsuarioActual = idUsuarioActual,
                 onBack = { navController.popBackStack() }
             )
         }

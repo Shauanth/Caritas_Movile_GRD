@@ -4,13 +4,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Report
-import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
-import pucp.edu.caritas_movile_grd.Cursos.CapacitacionesScreen
 import pucp.edu.caritas_movile_grd.Incidencias.GRDScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
 import pucp.edu.caritas_movile_grd.Simulacros.SimulacroViewModel
@@ -21,7 +18,6 @@ import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
 @Composable
 fun MainScreen(
     incidenciaViewModel: IncidenciaViewModel,
-    cursoViewModel: CursoViewModel,
     simulacroViewModel: SimulacroViewModel,
     syncViewModel: SyncViewModel,
     onReportarIncidencia: () -> Unit,
@@ -46,7 +42,7 @@ fun MainScreen(
             syncViewModel.limpiarMensajes()
         }
     }
-    val tabTitles = listOf("Incidencias GRD", "Capacitaciones", "Simulacros")
+    val tabTitles = listOf("Incidencias GRD", "Simulacros")
 
     Scaffold(
         snackbarHost = {
@@ -84,12 +80,6 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.School, contentDescription = null) },
-                    label = { Text("Capacitaciones") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
                     icon = { Icon(Icons.Default.Shield, contentDescription = null) },
                     label = { Text("Simulacros") }
                 )
@@ -104,8 +94,7 @@ fun MainScreen(
                     onRealizarActividad = { inc -> onRealizarActividad(inc.uuidIncidencia) },
                     onSubirEvidencia = { inc -> onSubirEvidencia(inc.uuidIncidencia) }
                 )
-                1 -> CapacitacionesScreen(viewModel = cursoViewModel)
-                2 -> SimulacrosScreen(viewModel = simulacroViewModel)
+                1 -> SimulacrosScreen(viewModel = simulacroViewModel)
             }
         }
     }

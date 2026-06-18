@@ -7,8 +7,9 @@ import androidx.room.PrimaryKey
 data class PerfilUsuarioLocal(
     @PrimaryKey val uuidUsuario: String,
     val idUsuarioRemoto: String? = null,
-    val rol: String, // "BRIGADISTA", "ESPECIALISTA"
-    val pinAccesoOffline: String, // Hash del PIN para entrar sin internet
+    val rol: String,
+    val pinAccesoOffline: String,
     val jwtCacheado: String,
-    val nombres: String
+    val nombres: String,
+    val fechaLogin: Long = System.currentTimeMillis()
 )

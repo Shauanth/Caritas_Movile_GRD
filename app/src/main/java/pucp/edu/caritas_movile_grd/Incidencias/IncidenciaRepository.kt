@@ -177,14 +177,15 @@ class IncidenciaRepository(
 
     suspend fun finalizarRecopilacion(
         incidencia: IncidenciaLocal,
-        observacionCierre: String = "Recopilación finalizada desde móvil"
+        observacionCierre: String = "Recopilación finalizada desde móvil",
+        idUsuario: String = MobileApiConfig.MOBILE_SYNC_USER_ID
     ): Boolean {
         val payload = JSONObject().apply {
             put("uuidCierre", "cierre-${incidencia.uuidIncidencia}")
             put("uuidIncidencia", incidencia.uuidIncidencia)
             putNullable("idIncidenciaRemota", incidencia.idIncidenciaRemota)
             putNullable("codigoCaso", incidencia.codigoCasoRemoto)
-            put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+            put("idUsuarioGRD", idUsuario)
             put("observacionCierre", observacionCierre)
         }
 

@@ -21,6 +21,8 @@ import pucp.edu.caritas_movile_grd.Kits.EntregaKitLocal
 import pucp.edu.caritas_movile_grd.Kits.KitDao
 import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
 import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
+import pucp.edu.caritas_movile_grd.login.LoginDao
+import kotlinx.coroutines.flow.firstOrNull
 data class SyncResult(
     val incidenciasSincronizadas: Int,
     val afectadosSincronizados: Int,
@@ -34,9 +36,15 @@ data class SyncResult(
 class SyncRepository(
     private val syncDao: SyncDao,
     private val kitDao: KitDao,
+    private val loginDao: LoginDao,
     private val appContext: Context,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
+
+    private suspend fun getUserId(): String =
+        loginDao.getPerfilUsuario().firstOrNull()?.uuidUsuario
+            ?: MobileApiConfig.MOBILE_SYNC_USER_ID
+
 
     suspend fun sincronizarPendientes(): SyncResult {
         var incidenciasSincronizadas = 0
@@ -46,9 +54,10 @@ class SyncRepository(
         var seguimientosSincronizados = 0
         var entregasSincronizadas = 0
         val errores = mutableListOf<String>()
+        val userId = getUserId()
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
-        val avancesKitsSincronizados = sincronizarAvancesKitsAsignados(errores)
+        val avancesKitsSincronizados = sincronizarAvancesKitsAsignados(errores, userId)
         val evidenciasServidor = mutableListOf<pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal>()
         // 1. Sincronizar incidencias nuevas
         for (incidencia in incidenciasPendientes) {
@@ -185,7 +194,8 @@ class SyncRepository(
                 evidencia = evidencia,
                 incidencia = incidencia,
                 idIncidenciaRemota = idIncidenciaRemota,
-                errores = errores
+                errores = errores,
+                idUsuario = userId
             )
 
             if (sincronizada) {
@@ -235,7 +245,8 @@ class SyncRepository(
                 observacion = observacion,
                 incidencia = incidencia,
                 idIncidenciaRemota = idIncidenciaRemota,
-                errores = errores
+                errores = errores,
+                idUsuario = userId
             )
 
             if (sincronizada) {
@@ -268,7 +279,8 @@ class SyncRepository(
                 seguimiento = seguimiento,
                 incidencia = incidencia,
                 idIncidenciaRemota = idIncidenciaRemota,
-                errores = errores
+                errores = errores,
+                idUsuario = userId
             )
 
             if (sincronizado) {
@@ -308,7 +320,8 @@ class SyncRepository(
                 entrega = entrega,
                 incidencia = incidencia,
                 idIncidenciaRemota = idIncidenciaRemota,
-                errores = errores
+                errores = errores,
+                idUsuario = userId
             )
 
             if (sincronizada) {
@@ -317,7 +330,7 @@ class SyncRepository(
         }
         // 7. Descargar incidencias asignadas desde el servidor
         try {
-            descargarIncidenciasDelServidor()
+            descargarIncidenciasDelServidor(userId)
         } catch (e: Exception) {
             Log.e("SyncRepository", "Error descargando incidencias", e)
             errores.add("No se pudieron descargar incidencias: ${e.message}")
@@ -335,7 +348,8 @@ class SyncRepository(
     }
 
     private suspend fun sincronizarAvancesKitsAsignados(
-        errores: MutableList<String>
+        errores: MutableList<String>,
+        idUsuario: String
     ): Int {
         val kitsPendientes = kitDao.getKitsAsignadosPendientesSync()
 
@@ -366,7 +380,7 @@ class SyncRepository(
                     put("uuidIncidencia", incidencia.uuidIncidencia)
                     put("idIncidenciaRemota", idIncidenciaRemota)
                     put("codigoCaso", incidencia.codigoCasoRemoto)
-                    put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+                    put("idUsuarioGRD", idUsuario)
                     put("fechaEntrega", normalizarFechaRegistro(System.currentTimeMillis()))
 
                     val descripcion = kits
@@ -428,8 +442,8 @@ class SyncRepository(
 
         return sincronizados
     }
-    suspend fun descargarIncidenciasDelServidor() {
-        val response = mobileSyncApi.obtenerIncidenciasAsignadas(MobileApiConfig.MOBILE_SYNC_USER_ID)
+    suspend fun descargarIncidenciasDelServidor(idUsuario: String = MobileApiConfig.MOBILE_SYNC_USER_ID) {
+        val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuario)
         val items = response.optJSONArray("incidencias") ?: return
         val incidencias = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal>()
 
@@ -454,7 +468,7 @@ class SyncRepository(
                 pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal(
                     uuidIncidencia          = uuid,
                     idIncidenciaRemota      = idRemoto,
-                    uuidUsuario             = MobileApiConfig.MOBILE_SYNC_USER_ID,
+                    uuidUsuario             = idUsuario,
                     idParroquia             = 1,
                     idCatalogoTipo          = 1,
                     tipoEventoNombre        = tipoEvento,
@@ -803,14 +817,16 @@ class SyncRepository(
         evidencia: EvidenciaLocal,
         incidencia: IncidenciaLocal,
         idIncidenciaRemota: String,
-        errores: MutableList<String>
+        errores: MutableList<String>,
+        idUsuario: String
     ): Boolean {
         return try {
             val responseEvidencia = mobileSyncApi.sincronizarEvidencia(
                 evidencia.toMobilePayload(
                     incidencia = incidencia,
                     idIncidenciaRemota = idIncidenciaRemota,
-                    context = appContext
+                    context = appContext,
+                    idUsuario = idUsuario
                 )
             )
 
@@ -845,13 +861,15 @@ class SyncRepository(
         observacion: ObservacionLocal,
         incidencia: IncidenciaLocal,
         idIncidenciaRemota: String,
-        errores: MutableList<String>
+        errores: MutableList<String>,
+        idUsuario: String
     ): Boolean {
         return try {
             val responseObservacion = mobileSyncApi.sincronizarObservacion(
                 observacion.toMobilePayload(
                     incidencia = incidencia,
-                    idIncidenciaRemota = idIncidenciaRemota
+                    idIncidenciaRemota = idIncidenciaRemota,
+                    idUsuario = idUsuario
                 )
             )
 
@@ -881,13 +899,15 @@ class SyncRepository(
         seguimiento: SeguimientoLocal,
         incidencia: IncidenciaLocal,
         idIncidenciaRemota: String,
-        errores: MutableList<String>
+        errores: MutableList<String>,
+        idUsuario: String
     ): Boolean {
         return try {
             val responseSeguimiento = mobileSyncApi.sincronizarSeguimiento(
                 seguimiento.toMobilePayload(
                     incidencia = incidencia,
-                    idIncidenciaRemota = idIncidenciaRemota
+                    idIncidenciaRemota = idIncidenciaRemota,
+                    idUsuario = idUsuario
                 )
             )
 
@@ -916,13 +936,15 @@ class SyncRepository(
         entrega: EntregaKitLocal,
         incidencia: IncidenciaLocal,
         idIncidenciaRemota: String,
-        errores: MutableList<String>
+        errores: MutableList<String>,
+        idUsuario: String
     ): Boolean {
         return try {
             val responseEntrega = mobileSyncApi.sincronizarEntrega(
                 entrega.toMobilePayload(
                     incidencia = incidencia,
-                    idIncidenciaRemota = idIncidenciaRemota
+                    idIncidenciaRemota = idIncidenciaRemota,
+                    idUsuario = idUsuario
                 )
             )
 
@@ -1061,7 +1083,8 @@ private fun sexoBackend(genero: String?): String? = when (genero?.trim()?.lowerc
 private fun EvidenciaLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
     idIncidenciaRemota: String,
-    context: Context
+    context: Context,
+    idUsuario: String
 ): JSONObject {
     val nombreSeguro = nombreArchivo
         ?.takeIf { it.isNotBlank() }
@@ -1091,7 +1114,7 @@ private fun EvidenciaLocal.toMobilePayload(
         put("idReferenciaRemota", idIncidenciaRemota)
         put("tipoReferencia", "INCIDENCIA")
 
-        put("idUsuarioCargaGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioCargaGRD", idUsuario)
 
         put("nombreArchivo", nombreSeguro)
         put("contentType", tipoSeguro)
@@ -1110,7 +1133,8 @@ private fun EvidenciaLocal.toMobilePayload(
 
 private fun EntregaKitLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
-    idIncidenciaRemota: String
+    idIncidenciaRemota: String,
+    idUsuario: String
 ): JSONObject {
     return JSONObject().apply {
         put("uuidEntrega", uuidEntrega)
@@ -1127,7 +1151,7 @@ private fun EntregaKitLocal.toMobilePayload(
         put("cantidadEntregada", cantidad)
         put("fechaEntrega", normalizarFechaRegistro(fechaEntrega))
 
-        put("idUsuarioResponsableGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioResponsableGRD", idUsuario)
     }
 }
 
@@ -1166,7 +1190,8 @@ private fun leerArchivoBase64(context: Context, rutaLocal: String): ArchivoBase6
 
 private fun ObservacionLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
-    idIncidenciaRemota: String
+    idIncidenciaRemota: String,
+    idUsuario: String
 ): JSONObject {
     return JSONObject().apply {
         put("uuidObservacion", uuidObservacion)
@@ -1177,11 +1202,9 @@ private fun ObservacionLocal.toMobilePayload(
         put("idReferenciaRemota", idIncidenciaRemota)
         put("tipoReferencia", "INCIDENCIA")
 
-        // Usuario que registra la observación.
-        // Se envían varios alias para ser compatible con el endpoint backend.
-        put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
-        put("idUsuarioRemoto", MobileApiConfig.MOBILE_SYNC_USER_ID)
-        put("idUsuarioCargaGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioGRD", idUsuario)
+        put("idUsuarioRemoto", idUsuario)
+        put("idUsuarioCargaGRD", idUsuario)
 
         put("textoObservacion", textoObservacion)
         put("observacion", textoObservacion)
@@ -1191,7 +1214,8 @@ private fun ObservacionLocal.toMobilePayload(
 
 private fun SeguimientoLocal.toMobilePayload(
     incidencia: IncidenciaLocal,
-    idIncidenciaRemota: String
+    idIncidenciaRemota: String,
+    idUsuario: String
 ): JSONObject {
     return JSONObject().apply {
         put("uuidSeguimiento", uuidSeguimiento)
@@ -1202,7 +1226,7 @@ private fun SeguimientoLocal.toMobilePayload(
         put("idIncidenciaRemota", idIncidenciaRemota)
         putNullable("codigoCaso", incidencia.codigoCasoRemoto)
 
-        put("idUsuarioGRD", MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioGRD", idUsuario)
 
         put("fechaSeguimiento", normalizarFechaRegistro(fechaSeguimiento))
         putNullable("situacion", situacion)

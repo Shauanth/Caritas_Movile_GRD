@@ -11,7 +11,6 @@ import pucp.edu.caritas_movile_grd.Incidencias.AfectadoLocal
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Network.MobileSyncApi
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,10 +45,14 @@ class SyncRepository(
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
 
-    private suspend fun getUserId(): String =
-        loginDao.getPerfilUsuario().firstOrNull()?.uuidUsuario
-            ?: MobileApiConfig.MOBILE_SYNC_USER_ID
+    private suspend fun obtenerIdUsuarioGRDActual(): String {
+        val perfil = loginDao.getPerfilUsuario().firstOrNull()
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
 
+        return perfil.uuidUsuario.takeIf { it.isNotBlank() }
+            ?: perfil.idUsuarioRemoto?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
+    }
 
     suspend fun sincronizarPendientes(): SyncResult {
         var incidenciasSincronizadas = 0
@@ -61,7 +64,7 @@ class SyncRepository(
         var simulacrosSincronizados = 0
         var simulacrosDescargados = 0
         val errores = mutableListOf<String>()
-        val userId = getUserId()
+        val userId = obtenerIdUsuarioGRDActual()
         val simulacroRepository = SimulacroRepository(simulacroDao, mobileSyncApi)
 
         val incidenciasPendientes = syncDao.getIncidenciasNuevasParaSincronizar()
@@ -345,7 +348,7 @@ class SyncRepository(
         }
         // 8. Sincronizar ejecuciones de simulacros y refrescar asignaciones.
         try {
-            simulacrosSincronizados = simulacroRepository.sincronizarSimulacrosPendientes()
+            simulacrosSincronizados = simulacroRepository.sincronizarSimulacrosPendientes(userId)
         } catch (e: Exception) {
             Log.e("SyncRepository", "Error sincronizando simulacros", e)
             errores.add("No se pudieron sincronizar simulacros: ${e.message}")
@@ -466,8 +469,11 @@ class SyncRepository(
 
         return sincronizados
     }
-    suspend fun descargarIncidenciasDelServidor(idUsuario: String = MobileApiConfig.MOBILE_SYNC_USER_ID) {
-        val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuario)
+    suspend fun descargarIncidenciasDelServidor(idUsuario: String? = null) {
+        val idUsuarioActual = idUsuario?.takeIf { it.isNotBlank() }
+            ?: obtenerIdUsuarioGRDActual()
+
+        val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuarioActual)
         val items = response.optJSONArray("incidencias") ?: return
         val incidencias = mutableListOf<pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal>()
 
@@ -492,7 +498,7 @@ class SyncRepository(
                 pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal(
                     uuidIncidencia          = uuid,
                     idIncidenciaRemota      = idRemoto,
-                    uuidUsuario             = idUsuario,
+                    uuidUsuario             = idUsuarioActual,
                     idParroquia             = 1,
                     idCatalogoTipo          = 1,
                     tipoEventoNombre        = tipoEvento,

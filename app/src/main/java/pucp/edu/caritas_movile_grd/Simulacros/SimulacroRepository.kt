@@ -3,7 +3,6 @@ package pucp.edu.caritas_movile_grd.Simulacros
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import pucp.edu.caritas_movile_grd.Network.MobileSyncApi
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,7 +59,7 @@ class SimulacroRepository(
         )
     }
 
-    suspend fun sincronizarSimulacrosPendientes(): Int {
+    suspend fun sincronizarSimulacrosPendientes(idUsuarioGRDActual: String? = null): Int {
         var sincronizados = 0
         val pendientes = dao.getSimulacrosPendientesSincronizar()
 
@@ -68,7 +67,9 @@ class SimulacroRepository(
             val idRemoto = simulacro.idActividadPreventivaRemota
             if (idRemoto.isNullOrBlank()) continue
 
-            val response = mobileSyncApi.sincronizarSimulacro(simulacro.toSyncPayload())
+            val response = mobileSyncApi.sincronizarSimulacro(
+                simulacro.toSyncPayload(idUsuarioGRDActual)
+            )
 
             if (response.optBoolean("ok", false)) {
                 dao.marcarSincronizado(
@@ -123,11 +124,15 @@ private fun JSONObject.toSimulacroLocal(): SimulacroLocal {
     )
 }
 
-private fun SimulacroLocal.toSyncPayload(): JSONObject {
+private fun SimulacroLocal.toSyncPayload(idUsuarioGRDActual: String?): JSONObject {
+    val idUsuario = idUsuarioGRDResponsable?.takeIf { it.isNotBlank() }
+        ?: idUsuarioGRDActual?.takeIf { it.isNotBlank() }
+        ?: throw IllegalStateException("No hay sesión activa de brigadista")
+
     return JSONObject().apply {
         put("uuidSync", "simulacro-${uuidSimulacro}-${System.currentTimeMillis()}")
         putNullable("idActividadPreventivaRemota", idActividadPreventivaRemota)
-        put("idUsuarioGRD", idUsuarioGRDResponsable ?: MobileApiConfig.MOBILE_SYNC_USER_ID)
+        put("idUsuarioGRD", idUsuario)
         putNullable("idBrigadistaParroquial", idBrigadistaParroquialResponsable)
         put("estadoActividad", "EJECUTADA")
         putNullable("fechaEjecucion", fechaEjecucion)

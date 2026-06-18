@@ -4,10 +4,11 @@ import kotlinx.coroutines.flow.Flow
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import org.json.JSONObject
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import pucp.edu.caritas_movile_grd.Network.MobileSyncApi
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import pucp.edu.caritas_movile_grd.login.LoginDao
+import kotlinx.coroutines.flow.firstOrNull
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -18,6 +19,7 @@ import android.util.Log
 private const val TAG_ASIGNADAS = "IncidenciasAsignadas"
 class IncidenciaRepository(
     private val incidenciaDao: IncidenciaDao,
+    private val loginDao: LoginDao,
     private val mobileSyncApi: MobileSyncApi = MobileSyncApi()
 ) {
     val allIncidencias: Flow<List<IncidenciaLocal>> = incidenciaDao.getAllIncidencias()
@@ -62,13 +64,23 @@ class IncidenciaRepository(
         incidenciaDao.insertEvidencia(evidencia)
     }   
 
-    suspend fun refrescarIncidenciasAsignadas(
-        idUsuarioGRD: String = MobileApiConfig.MOBILE_SYNC_USER_ID
-    ) {
-        try {
-            Log.d(TAG_ASIGNADAS, "Iniciando descarga para idUsuarioGRD=$idUsuarioGRD")
+    private suspend fun obtenerIdUsuarioGRDActual(): String {
+        val perfil = loginDao.getPerfilUsuario().firstOrNull()
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
 
-            val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuarioGRD)
+        return perfil.uuidUsuario.takeIf { it.isNotBlank() }
+            ?: perfil.idUsuarioRemoto?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("No hay sesión activa de brigadista")
+    }
+
+    suspend fun refrescarIncidenciasAsignadas(idUsuarioGRD: String? = null) {
+        try {
+            val idUsuarioActual = idUsuarioGRD?.takeIf { it.isNotBlank() }
+                ?: obtenerIdUsuarioGRDActual()
+
+            Log.d(TAG_ASIGNADAS, "Iniciando descarga para idUsuarioGRD=$idUsuarioActual")
+
+            val response = mobileSyncApi.obtenerIncidenciasAsignadas(idUsuarioActual)
 
             Log.d(TAG_ASIGNADAS, "Respuesta completa=$response")
             Log.d(TAG_ASIGNADAS, "Total backend=${response.optInt("total", -1)}")
@@ -103,7 +115,7 @@ class IncidenciaRepository(
 
                 val asignacionJson = wrapper.optJSONObject("asignacion")
                 val incidenciaLocal = incidenciaJson.toIncidenciaLocalAsignada(
-                    idUsuarioGRD,
+                    idUsuarioActual,
                     uuidMovilAsignacion = asignacionJson?.optString("uuidMovil")
                         ?.takeIf { it.isNotBlank() && it != "null" }
                 )
@@ -160,16 +172,26 @@ class IncidenciaRepository(
     suspend fun finalizarRecopilacion(
         incidencia: IncidenciaLocal,
         observacionCierre: String = "Recopilación finalizada desde móvil",
-        idUsuario: String = MobileApiConfig.MOBILE_SYNC_USER_ID
+        idUsuario: String? = null
     ): Boolean {
+        val idUsuarioActual = idUsuario?.takeIf { it.isNotBlank() }
+            ?: obtenerIdUsuarioGRDActual()
+
         val payload = JSONObject().apply {
             put("uuidCierre", "cierre-${incidencia.uuidIncidencia}")
             put("uuidIncidencia", incidencia.uuidIncidencia)
             putNullable("idIncidenciaRemota", incidencia.idIncidenciaRemota)
             putNullable("codigoCaso", incidencia.codigoCasoRemoto)
-            put("idUsuarioGRD", idUsuario)
+            put("idUsuarioGRD", idUsuarioActual)
             put("observacionCierre", observacionCierre)
         }
+
+        Log.d(
+            TAG_ASIGNADAS,
+            "Finalizar recopilacion: uuidIncidencia=${incidencia.uuidIncidencia}, " +
+                    "codigoCaso=${incidencia.codigoCasoRemoto}, idUsuarioGRD=$idUsuarioActual, " +
+                    "endpoint=/api/mobile/sync/finalizar-recopilacion"
+        )
 
         val response = mobileSyncApi.finalizarRecopilacion(payload)
 

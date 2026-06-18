@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
-import pucp.edu.caritas_movile_grd.Network.MobileApiConfig
 import java.text.SimpleDateFormat
 import java.util.*
 import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
@@ -58,7 +57,7 @@ fun RealizarActividadScreen(
     syncViewModel: SyncViewModel,
     kitViewModel: KitViewModel,
     onBack: () -> Unit,
-    idUsuarioActual: String = MobileApiConfig.MOBILE_SYNC_USER_ID
+    idUsuarioActual: String = ""
 ) {
     val incidencias by viewModel.incidencias.collectAsState()
     val incidencia = incidencias.find { it.uuidIncidencia == uuidIncidencia }

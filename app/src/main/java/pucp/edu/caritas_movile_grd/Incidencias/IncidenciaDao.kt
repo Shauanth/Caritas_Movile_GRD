@@ -1,7 +1,11 @@
 package pucp.edu.caritas_movile_grd.Incidencias
-
+import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
+import pucp.edu.caritas_movile_grd.Observaciones.ObservacionLocal
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 
 @Dao
 interface IncidenciaDao {
@@ -22,4 +26,51 @@ interface IncidenciaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAfectado(afectado: AfectadoLocal)
+
+    @Update
+    suspend fun updateAfectado(afectado: AfectadoLocal)
+
+    @Delete
+    suspend fun deleteAfectado(afectado: AfectadoLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertObservacion(observacion: ObservacionLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertObservaciones(observaciones: List<ObservacionLocal>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSeguimiento(seguimiento: SeguimientoLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertIncidencia(incidencia: IncidenciaLocal)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertIncidencias(incidencias: List<IncidenciaLocal>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAfectados(afectados: List<AfectadoLocal>)
+    @Query("""
+        SELECT * FROM observacion_local
+        WHERE uuidIncidencia = :uuidIncidencia
+        ORDER BY fechaRegistro DESC
+    """)
+    fun getObservacionesByIncidencia(uuidIncidencia: String): Flow<List<ObservacionLocal>>
+
+    @Query("""
+        SELECT * FROM seguimiento_local
+        WHERE uuidIncidencia = :uuidIncidencia
+        ORDER BY fechaSeguimiento DESC
+    """)
+    fun getSeguimientosByIncidencia(uuidIncidencia: String): Flow<List<SeguimientoLocal>>
+
+    @Query("""
+        SELECT * FROM evidencia_local
+        WHERE uuidReferencia = :uuidIncidencia
+        ORDER BY rowid DESC
+    """)
+    fun getEvidenciasByIncidencia(uuidIncidencia: String): Flow<List<EvidenciaLocal>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvidencia(evidencia: EvidenciaLocal)
 }

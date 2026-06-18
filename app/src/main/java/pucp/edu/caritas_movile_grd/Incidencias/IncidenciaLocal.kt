@@ -11,10 +11,11 @@ import pucp.edu.caritas_movile_grd.Masters.*
 @Entity(tableName = "incidencia_local")
 data class IncidenciaLocal(
     @PrimaryKey val uuidIncidencia: String,
-    val idIncidenciaRemota: Int? = null,
+    val idIncidenciaRemota: String? = null,
     val uuidUsuario: String,
     val idParroquia: Int,
     val idCatalogoTipo: Int,
+    val tipoEventoNombre: String? = null,
     val descripcion: String,
     val nombre: String = "",
     val numAfectados: Int = 0,
@@ -37,5 +38,10 @@ data class IncidenciaLocal(
     val referencia: String? = null,
     val parroquiaNombre: String? = null,
     val nivelAfectacion: String? = null,  // Leve / Moderado / Severo
-    val necesidadesObs: String? = null    // Observaciones sobre necesidades
+    val necesidadesObs: String? = null,   // Observaciones sobre necesidades
+
+    val latitud: Double? = null,
+    val longitud: Double? = null,
+    val codigoCasoRemoto: String? = null,
+    val idResponsableGRD: String? = null  // idUsuarioResponsableGRD del servidor
 )

@@ -19,4 +19,7 @@ interface EvidenciaDao {
 
     @Query("SELECT * FROM evidencia_local WHERE estadoSync = 'PENDIENTE_SUBIDA'")
     suspend fun getEvidenciasPendientes(): List<EvidenciaLocal>
+
+    @Query("UPDATE evidencia_local SET estadoSync = 'PENDIENTE_ELIMINACION' WHERE uuidEvidencia = :uuidEvidencia")
+    suspend fun marcarEvidenciaParaEliminar(uuidEvidencia: String)
 }

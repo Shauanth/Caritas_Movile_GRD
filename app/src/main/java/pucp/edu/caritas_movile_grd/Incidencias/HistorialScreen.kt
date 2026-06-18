@@ -68,6 +68,13 @@ private val CATEGORIAS_FILTER = listOf(
 fun formatDate(timestamp: Long): String =
     SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
 
+
+private fun categoriaIncidencia(incidencia: IncidenciaLocal): String {
+    return incidencia.tipoEventoNombre
+        ?.takeIf { it.isNotBlank() }
+        ?: CATEGORIA_MAP[incidencia.idCatalogoTipo]
+        ?: "Tipo ${incidencia.idCatalogoTipo}"
+}
 // ── Color helpers ────────────────────────────────────────────────────────────
 
 /** Color de fondo de la tarjeta de estado */
@@ -185,16 +192,16 @@ private fun StatusSummaryCard(
             ) {
                 // Ícono en badge cuadrado (igual que web)
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = iconBg,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(26.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -409,13 +416,13 @@ fun IncidenciaCard(
 ) {
     val textColor  = statusTextColor(incidencia.estado)
     val badgeBg    = statusBg(incidencia.estado)
-    val categoria  = CATEGORIA_MAP[incidencia.idCatalogoTipo] ?: "Tipo ${incidencia.idCatalogoTipo}"
+    val categoria = categoriaIncidencia(incidencia)
     val ubicacion  = incidencia.distrito
         ?: incidencia.parroquiaNombre
         ?: PARROQUIA_MAP[incidencia.idParroquia]
         ?: "Sin ubicación"
-    val grdCode    = "GRD-2026-${(incidencia.idIncidenciaRemota ?: incidencia.uuidIncidencia.takeLast(4)).toString().padStart(4, '0')}"
-
+    val grdCode = incidencia.codigoCasoRemoto
+    ?: "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}"
     Card(
         modifier = Modifier
             .fillMaxWidth()

@@ -15,6 +15,7 @@ import pucp.edu.caritas_movile_grd.Incidencias.GRDScreen
 import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaViewModel
 import pucp.edu.caritas_movile_grd.Simulacros.SimulacroViewModel
 import pucp.edu.caritas_movile_grd.Simulacros.SimulacrosScreen
+import pucp.edu.caritas_movile_grd.LocalBDConector.SyncViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,6 +23,7 @@ fun MainScreen(
     incidenciaViewModel: IncidenciaViewModel,
     cursoViewModel: CursoViewModel,
     simulacroViewModel: SimulacroViewModel,
+    syncViewModel: SyncViewModel,
     onReportarIncidencia: () -> Unit,
     onRealizarActividad: (String) -> Unit,
     onSubirEvidencia: (String) -> Unit,
@@ -29,14 +31,39 @@ fun MainScreen(
     onLogout: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    val syncState by syncViewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(Unit) {
+        syncViewModel.sincronizarPendientes()
+    }
+
+    LaunchedEffect(syncState.lastMessage, syncState.lastError) {
+        val mensaje = syncState.lastError ?: syncState.lastMessage
+
+        if (!mensaje.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(mensaje)
+            syncViewModel.limpiarMensajes()
+        }
+    }
     val tabTitles = listOf("Incidencias GRD", "Capacitaciones", "Simulacros")
 
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
+        },        
         topBar = {
             TopAppBar(
                 title = { Text(tabTitles[selectedTab]) },
                 actions = {
+                    TextButton(
+                        onClick = { syncViewModel.sincronizarPendientes() },
+                        enabled = !syncState.isSyncing
+                    ) {
+                        Text(
+                            text = if (syncState.isSyncing) "Sincronizando..." else "Sincronizar"
+                        )
+                    }
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Cerrar sesión")
                     }

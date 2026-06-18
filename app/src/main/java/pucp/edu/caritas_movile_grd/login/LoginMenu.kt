@@ -3,6 +3,7 @@ package pucp.edu.caritas_movile_grd.login
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -21,12 +23,16 @@ import pucp.edu.caritas_movile_grd.R
 
 @Composable
 fun LoginScreen(
+    viewModel: LoginViewModel,
     onLoginSuccess: (String) -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
+
+    val estado by viewModel.estado.collectAsState()
+    val cargando = estado is LoginEstado.Cargando
+    val errorMessage = (estado as? LoginEstado.Error)?.mensaje ?: ""
 
     Scaffold { padding ->
         Column(
@@ -63,21 +69,23 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             OutlinedTextField(
-                value = username,
-                onValueChange = { username = it; errorMessage = "" },
-                label = { Text("Usuario / DNI") },
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Correo electrónico") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 isError = errorMessage.isNotEmpty(),
-                singleLine = true
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                enabled = !cargando
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it; errorMessage = "" },
-                label = { Text("Contraseña / PIN") },
+                onValueChange = { password = it },
+                label = { Text("Contraseña") },
                 visualTransformation = if (passwordVisible) VisualTransformation.None
                                        else PasswordVisualTransformation(),
                 trailingIcon = {
@@ -85,15 +93,16 @@ fun LoginScreen(
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.Visibility
                                           else Icons.Default.VisibilityOff,
-                            contentDescription = if (passwordVisible) "Ocultar contraseña"
-                                                 else "Mostrar contraseña"
+                            contentDescription = null
                         )
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 isError = errorMessage.isNotEmpty(),
-                singleLine = true
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                enabled = !cargando
             )
 
             if (errorMessage.isNotEmpty()) {
@@ -109,21 +118,26 @@ fun LoginScreen(
 
             Button(
                 onClick = {
-                    when {
-                        username.isBlank() || password.isBlank() ->
-                            errorMessage = "Ingresa tu usuario y contraseña"
-                        username == "brigadista" && password == "123456" ->
-                            onLoginSuccess(username)
-                        else ->
-                            errorMessage = "Credenciales incorrectas. Esta app es exclusiva para brigadistas."
+                    if (email.isBlank() || password.isBlank()) return@Button
+                    viewModel.loginConApi(email.trim(), password) {
+                        onLoginSuccess(email.trim())
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                enabled = !cargando && email.isNotBlank() && password.isNotBlank()
             ) {
-                Text("INGRESAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                if (cargando) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("INGRESAR", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

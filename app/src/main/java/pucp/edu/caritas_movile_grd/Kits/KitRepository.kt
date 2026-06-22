@@ -42,6 +42,8 @@ class KitRepository(private val kitDao: KitDao) {
         articulo: KitArticuloAsignadoLocal,
         confirmado: Boolean
     ) {
+        if (articulo.confirmado) return
+
         kitDao.actualizarConfirmacionArticulo(
             uuidArticuloAsignado = articulo.uuidArticuloAsignado,
             confirmado = confirmado,
@@ -56,6 +58,10 @@ class KitRepository(private val kitDao: KitDao) {
         estadoEntrega: String
     ) {
         if (!kit.kitsEntregaHabilitada) return
+        if (kit.estadoSync == EstadoSync.SINCRONIZADO &&
+            (kit.estadoEntrega == "ENTREGADO" || kit.estadoEntrega == "PARCIAL")
+        ) return
+        if (kit.estadoEntrega == "ENTREGADO") return
 
         kitDao.marcarKitEntregado(
             uuidKitAsignado = kit.uuidKitAsignado,
@@ -73,6 +79,10 @@ class KitRepository(private val kitDao: KitDao) {
         evidenciaLocalUri: String? = null
     ) {
         if (!kit.kitsEntregaHabilitada) return
+        if (kit.estadoSync == EstadoSync.SINCRONIZADO &&
+            (kit.estadoEntrega == "ENTREGADO" || kit.estadoEntrega == "PARCIAL")
+        ) return
+        if (kit.estadoEntrega == "ENTREGADO") return
 
         kitDao.marcarTodosArticulosDeKitEntregados(
             uuidKitAsignado = kit.uuidKitAsignado

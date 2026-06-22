@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,7 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +51,26 @@ import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
 import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
+private val ESTADOS_SOLO_LECTURA = setOf("CERRADO", "RECHAZADO")
+private val GENEROS_AFECTADO = listOf("Femenino", "Masculino", "Otro", "Prefiere no decir")
+private val PARENTESCOS_AFECTADO = listOf(
+    "Jefe(a) de Hogar", "Padre", "Madre", "Hijo(a)",
+    "Nieto(a)", "Abuelo(a)", "Tío(a)", "Cónyuge", "Otro"
+)
+private val SIN_SITUACION_ESPECIAL = "Sin situación especial"
+private val SITUACIONES_ESPECIALES_AFECTADO = listOf(
+    SIN_SITUACION_ESPECIAL,
+    "Gestante",
+    "Discapacitado",
+    "Con Lactancia",
+    "Enfermo",
+    "Herido",
+    "Enfermo crónico",
+    "Adulto mayor"
+)
+
+private fun esIncidenciaSoloLectura(incidencia: IncidenciaLocal): Boolean =
+    incidencia.estado.trim().uppercase(Locale.getDefault()) in ESTADOS_SOLO_LECTURA
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,10 +97,12 @@ fun RealizarActividadScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
 
     val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias", "Kits")
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
     var showMapSheet by remember { mutableStateOf(false) }
     var showFinalizarDialog by remember { mutableStateOf(false) }
 
     val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO" &&
+        !soloLectura &&
         (incidencia.idResponsableGRD == idUsuarioActual ||
          incidencia.uuidUsuario == idUsuarioActual)
 
@@ -127,10 +152,11 @@ fun RealizarActividadScreen(
                 .padding(padding)
         ) {
             // ── Tab row ──────────────────────────────────────────────────────
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = GREEN
+                contentColor = GREEN,
+                edgePadding = 8.dp
             ) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
@@ -139,6 +165,8 @@ fun RealizarActividadScreen(
                         text = {
                             Text(
                                 title,
+                                fontSize = 12.sp,
+                                maxLines = 1,
                                 fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
                             )
                         }
@@ -225,8 +253,9 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
     val context = LocalContext.current
     var showFinalizarDialog by remember { mutableStateOf(false) }
     var finalizandoRecopilacion by remember { mutableStateOf(false) }
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
 
-    val puedeFinalizarRecopilacion = incidencia.estado.equals("ASIGNADO", ignoreCase = true)
+    val puedeFinalizarRecopilacion = incidencia.estado.equals("ASIGNADO", ignoreCase = true) && !soloLectura
     val recopilacionFinalizada = incidencia.estado.equals("DATA RECOPILADA", ignoreCase = true)
 
     LazyColumn(
@@ -383,18 +412,20 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                TextButton(
-                    onClick = { showObsDialog = true },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        tint = GREEN,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar observación", color = GREEN, fontWeight = FontWeight.Medium)
+                if (!soloLectura) {
+                    TextButton(
+                        onClick = { showObsDialog = true },
+                        contentPadding = PaddingValues(horizontal = 0.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = GREEN,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Agregar observación", color = GREEN, fontWeight = FontWeight.Medium)
+                    }
                 }
             }
         }
@@ -494,18 +525,20 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                TextButton(
-                    onClick = { showSeguimientoDialog = true },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    Icon(
-                        Icons.Default.AddTask,
-                        contentDescription = null,
-                        tint = GREEN,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar seguimiento", color = GREEN, fontWeight = FontWeight.Medium)
+                if (!soloLectura) {
+                    TextButton(
+                        onClick = { showSeguimientoDialog = true },
+                        contentPadding = PaddingValues(horizontal = 0.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.AddTask,
+                            contentDescription = null,
+                            tint = GREEN,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Agregar seguimiento", color = GREEN, fontWeight = FontWeight.Medium)
+                    }
                 }
             }
         }
@@ -643,15 +676,30 @@ private fun FamiliasTab(
 ) {
     var filtro by remember { mutableStateOf("Todos") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showGrupoDialog by remember { mutableStateOf(false) }
+    var grupoPreseleccionado by remember { mutableStateOf<String?>(null) }
+    var gruposLocales by remember { mutableStateOf<List<String>>(emptyList()) }
     var editandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
     var borrandoAfectado by remember { mutableStateOf<AfectadoLocal?>(null) }
     val filtros = listOf("Todos", "Pendientes", "Confirmados")
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
+    val gruposPersistidos = afectados
+        .mapNotNull { it.familiaNombre?.takeIf { nombre -> nombre.isNotBlank() } }
+        .distinct()
+        .sorted()
+    val gruposDisponibles = (gruposPersistidos + gruposLocales).distinct().sorted()
 
     val afectadosFiltrados = when (filtro) {
         "Pendientes"  -> afectados.filter { it.estadoSync == EstadoSync.NUEVO || it.estadoSync == EstadoSync.EDITADO }
         "Confirmados" -> afectados.filter { it.estadoSync == EstadoSync.SINCRONIZADO }
         else          -> afectados
     }
+    val gruposFiltrados = afectadosFiltrados
+        .filter { !it.familiaNombre.isNullOrBlank() }
+        .groupBy { it.familiaNombre!!.trim() }
+        .toSortedMap()
+    val personasIndividuales = afectadosFiltrados.filter { it.familiaNombre.isNullOrBlank() }
+    val gruposSinMiembros = gruposLocales.filter { gruposFiltrados[it].isNullOrEmpty() }.sorted()
 
     Column(
         modifier = Modifier
@@ -691,16 +739,15 @@ private fun FamiliasTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "Personas (${afectadosFiltrados.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        "${afectados.size} en total",
-                        fontSize = 13.sp,
-                        color = Color.Gray
-                    )
+                    Column {
+                        Text("Personas afectadas", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(
+                            "${afectadosFiltrados.size} persona(s) · ${gruposDisponibles.size} grupo(s) familiar(es)",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    Text("${afectados.size} en total", fontSize = 13.sp, color = Color.Gray)
                 }
             }
 
@@ -722,24 +769,90 @@ private fun FamiliasTab(
                     }
                 }
             } else {
-                items(afectadosFiltrados) { afectado ->
-                    AfectadoCard(
-                        afectado = afectado,
-                        onEdit = { editandoAfectado = afectado },
-                        onDelete = { borrandoAfectado = afectado }
-                    )
+                gruposFiltrados.forEach { (nombreGrupo, miembros) ->
+                    item(key = "grupo-$nombreGrupo") {
+                        GrupoFamiliaCard(
+                            nombre = nombreGrupo,
+                            miembros = miembros,
+                            editable = !soloLectura,
+                            onAddMember = {
+                                grupoPreseleccionado = nombreGrupo
+                                showAddDialog = true
+                            },
+                            onEditMember = { editandoAfectado = it },
+                            onDeleteMember = { borrandoAfectado = it }
+                        )
+                    }
                 }
+
+                if (personasIndividuales.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Personas individuales",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    items(personasIndividuales, key = { it.uuidAfectado }) { afectado ->
+                        AfectadoCard(
+                            afectado = afectado,
+                            editable = !soloLectura,
+                            onEdit = { editandoAfectado = afectado },
+                            onDelete = { borrandoAfectado = afectado }
+                        )
+                    }
+                }
+            }
+
+            items(gruposSinMiembros, key = { "grupo-vacio-$it" }) { nombreGrupo ->
+                GrupoFamiliaCard(
+                    nombre = nombreGrupo,
+                    miembros = emptyList(),
+                    editable = !soloLectura,
+                    onAddMember = {
+                        grupoPreseleccionado = nombreGrupo
+                        showAddDialog = true
+                    },
+                    onEditMember = { editandoAfectado = it },
+                    onDeleteMember = { borrandoAfectado = it }
+                )
             }
 
             // ── Botón agregar ────────────────────────────────────────────────
             item {
-                TextButton(
-                    onClick = { showAddDialog = true },
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar persona", color = GREEN, fontWeight = FontWeight.Medium)
+                if (!soloLectura) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { showGrupoDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Group, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Nuevo grupo", fontSize = 13.sp)
+                        }
+                        Button(
+                            onClick = {
+                                grupoPreseleccionado = null
+                                showAddDialog = true
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                        ) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Agregar persona", fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Text(
+                        "Caso cerrado: familias en modo solo lectura",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
                 }
             }
         }
@@ -748,10 +861,25 @@ private fun FamiliasTab(
     if (showAddDialog) {
         AgregarPersonaDialog(
             uuidIncidencia = incidencia.uuidIncidencia,
+            gruposFamilia = gruposDisponibles,
+            grupoInicial = grupoPreseleccionado,
             onDismiss = { showAddDialog = false },
             onConfirm = { afectado ->
                 viewModel.guardarAfectado(afectado)
                 showAddDialog = false
+                grupoPreseleccionado = null
+            }
+        )
+    }
+
+    if (showGrupoDialog) {
+        NuevoGrupoFamiliarDialog(
+            onDismiss = { showGrupoDialog = false },
+            onConfirm = { nombre ->
+                gruposLocales = (gruposLocales + nombre.trim())
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                showGrupoDialog = false
             }
         )
     }
@@ -760,6 +888,8 @@ private fun FamiliasTab(
         AgregarPersonaDialog(
             uuidIncidencia = incidencia.uuidIncidencia,
             afectadoInicial = afectado,
+            gruposFamilia = gruposDisponibles,
+            grupoInicial = afectado.familiaNombre,
             onDismiss = { editandoAfectado = null },
             onConfirm = { editado ->
                 viewModel.editarAfectado(editado.copy(uuidAfectado = afectado.uuidAfectado, idAfectadoRemoto = afectado.idAfectadoRemoto))
@@ -892,8 +1022,110 @@ private fun SeguimientoItem(seguimiento: SeguimientoLocal) {
     }
 }
 @Composable
+private fun GrupoFamiliaCard(
+    nombre: String,
+    miembros: List<AfectadoLocal>,
+    editable: Boolean,
+    onAddMember: () -> Unit,
+    onEditMember: (AfectadoLocal) -> Unit,
+    onDeleteMember: (AfectadoLocal) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Group, contentDescription = null, tint = GREEN, modifier = Modifier.size(22.dp))
+                    Column {
+                        Text(nombre, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("${miembros.size} integrante(s)", fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+                if (editable) {
+                    TextButton(onClick = onAddMember, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp), tint = GREEN)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Agregar", color = GREEN, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            if (miembros.isEmpty()) {
+                Text("Grupo sin personas registradas.", fontSize = 12.sp, color = Color.Gray)
+            } else {
+                miembros.forEach { miembro ->
+                    AfectadoCard(
+                        afectado = miembro,
+                        editable = editable,
+                        onEdit = { onEditMember(miembro) },
+                        onDelete = { onDeleteMember(miembro) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NuevoGrupoFamiliarDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var nombre by remember { mutableStateOf("") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Nuevo grupo familiar", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            OutlinedTextField(
+                value = nombre,
+                onValueChange = { nombre = it },
+                label = { Text("Nombre o referencia del grupo") },
+                placeholder = { Text("Ej: Familia Ramos") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+            Text(
+                "Se guardará al asociar una persona usando el campo Grupo familiar.",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("Cancelar")
+                }
+                Button(
+                    onClick = { onConfirm(nombre.trim()) },
+                    enabled = nombre.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Text("Crear")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AfectadoCard(
     afectado: AfectadoLocal,
+    editable: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -917,12 +1149,29 @@ private fun AfectadoCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.Gray)
-                Column {
-                    Text(afectado.nombres, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        listOfNotNull(
+                            afectado.nombres,
+                            afectado.apellidoPaterno,
+                            afectado.apellidoMaterno
+                        ).joinToString(" ").trim(),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
                     Text(
                         "${TIPO_DOC_MAP[afectado.idCatalogoDoc] ?: "Doc"}: ${afectado.documentoIdentidad}",
                         fontSize = 12.sp, color = Color.Gray
                     )
+                    val detalle = listOfNotNull(
+                        afectado.edad?.let { "$it años" },
+                        afectado.genero?.takeIf { it.isNotBlank() },
+                        afectado.parentesco?.takeIf { it.isNotBlank() },
+                        afectado.familiaNombre?.takeIf { it.isNotBlank() }?.let { "Grupo: $it" }
+                    ).joinToString(" · ")
+                    if (detalle.isNotBlank()) {
+                        Text(detalle, fontSize = 11.sp, color = Color.Gray)
+                    }
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -934,11 +1183,13 @@ private fun AfectadoCard(
                         color = if (esPendiente) Color(0xFFE65100) else Color(0xFF2E7D32)
                     )
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color(0xFF1976D2), modifier = Modifier.size(16.dp))
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                if (editable) {
+                    IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Editar", tint = Color(0xFF1976D2), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }
@@ -1261,9 +1512,53 @@ private fun iniciarGrabacion(recognizer: SpeechRecognizer, onStarted: () -> Unit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun PersonaDropdownField(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(10.dp)
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun AgregarPersonaDialog(
     uuidIncidencia: String,
     afectadoInicial: AfectadoLocal? = null,
+    gruposFamilia: List<String> = emptyList(),
+    grupoInicial: String? = null,
     onDismiss: () -> Unit,
     onConfirm: (AfectadoLocal) -> Unit
 ) {
@@ -1272,12 +1567,40 @@ private fun AgregarPersonaDialog(
     var documento by remember { mutableStateOf(afectadoInicial?.documentoIdentidad ?: "") }
     var tipoDocIdx by remember { mutableIntStateOf(afectadoInicial?.idCatalogoDoc ?: 1) }
     var expanded by remember { mutableStateOf(false) }
+    var apellidoPaterno by remember { mutableStateOf(afectadoInicial?.apellidoPaterno ?: "") }
+    var apellidoMaterno by remember { mutableStateOf(afectadoInicial?.apellidoMaterno ?: "") }
+    var edad by remember { mutableStateOf(afectadoInicial?.edad?.toString() ?: "") }
+    var genero by remember {
+        mutableStateOf(
+            afectadoInicial?.genero
+                ?.takeIf { it in GENEROS_AFECTADO }
+                ?: if (!afectadoInicial?.genero.isNullOrBlank()) "Otro" else "Femenino"
+        )
+    }
+    var celular by remember { mutableStateOf(afectadoInicial?.celular ?: "") }
+    var parentesco by remember {
+        mutableStateOf(
+            afectadoInicial?.parentesco
+                ?.takeIf { it in PARENTESCOS_AFECTADO }
+                ?: if (!afectadoInicial?.parentesco.isNullOrBlank()) "Otro" else "Otro"
+        )
+    }
+    var situacionActual by remember {
+        mutableStateOf(
+            afectadoInicial?.situacionActual
+                ?.takeIf { it in SITUACIONES_ESPECIALES_AFECTADO }
+                ?: SIN_SITUACION_ESPECIAL
+        )
+    }
+    var familiaNombre by remember { mutableStateOf(grupoInicial ?: afectadoInicial?.familiaNombre ?: "") }
+    var grupoExpanded by remember { mutableStateOf(false) }
     val tiposDoc = listOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -1287,11 +1610,30 @@ private fun AgregarPersonaDialog(
             OutlinedTextField(
                 value = nombres,
                 onValueChange = { nombres = it },
-                label = { Text("Nombres completos") },
+                label = { Text("Nombres") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = apellidoPaterno,
+                    onValueChange = { apellidoPaterno = it },
+                    label = { Text("Apellido paterno") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+                OutlinedTextField(
+                    value = apellidoMaterno,
+                    onValueChange = { apellidoMaterno = it },
+                    label = { Text("Apellido materno") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
 
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -1328,6 +1670,99 @@ private fun AgregarPersonaDialog(
                 shape = RoundedCornerShape(10.dp)
             )
 
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = edad,
+                    onValueChange = { if (it.length <= 3 && it.all { c -> c.isDigit() }) edad = it },
+                    label = { Text("Edad") },
+                    modifier = Modifier.weight(0.35f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                PersonaDropdownField(
+                    label = "Género",
+                    selected = genero,
+                    options = GENEROS_AFECTADO,
+                    onSelect = { genero = it },
+                    modifier = Modifier.weight(0.65f)
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = celular,
+                    onValueChange = { if (it.length <= 9 && it.all { c -> c.isDigit() }) celular = it },
+                    label = { Text("Celular") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                PersonaDropdownField(
+                    label = "Parentesco",
+                    selected = parentesco,
+                    options = PARENTESCOS_AFECTADO,
+                    onSelect = { parentesco = it },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            PersonaDropdownField(
+                label = "Situación especial (opcional)",
+                selected = situacionActual,
+                options = SITUACIONES_ESPECIALES_AFECTADO,
+                onSelect = { situacionActual = it },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (gruposFamilia.isNotEmpty()) {
+                ExposedDropdownMenuBox(
+                    expanded = grupoExpanded,
+                    onExpandedChange = { grupoExpanded = !grupoExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = familiaNombre.ifBlank { "Sin grupo" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Grupo familiar (opcional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(grupoExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = grupoExpanded,
+                        onDismissRequest = { grupoExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Sin grupo") },
+                            onClick = {
+                                familiaNombre = ""
+                                grupoExpanded = false
+                            }
+                        )
+                        gruposFamilia.forEach { grupo ->
+                            DropdownMenuItem(
+                                text = { Text(grupo) },
+                                onClick = {
+                                    familiaNombre = grupo
+                                    grupoExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = familiaNombre,
+                    onValueChange = { familiaNombre = it },
+                    label = { Text("Grupo familiar (opcional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1345,8 +1780,18 @@ private fun AgregarPersonaDialog(
                                     idCatalogoDoc = tipoDocIdx,
                                     documentoIdentidad = documento.trim(),
                                     nombres = nombres.trim(),
-                                    familiaId = afectadoInicial?.familiaId,
-                                    familiaNombre = afectadoInicial?.familiaNombre,
+                                    apellidoPaterno = apellidoPaterno.trim().ifBlank { null },
+                                    apellidoMaterno = apellidoMaterno.trim().ifBlank { null },
+                                    edad = edad.toIntOrNull(),
+                                    genero = genero.trim().ifBlank { null },
+                                    celular = celular.trim().ifBlank { null },
+                                    parentesco = parentesco.trim().ifBlank { null },
+                                    situacionActual = situacionActual
+                                        .takeUnless { it == SIN_SITUACION_ESPECIAL }
+                                        ?.trim()
+                                        ?.ifBlank { null },
+                                    familiaId = familiaNombre.trim().takeIf { it.isNotBlank() },
+                                    familiaNombre = familiaNombre.trim().ifBlank { null },
                                     estadoSync = if (esEdicion) EstadoSync.EDITADO else EstadoSync.NUEVO
                                 )
                             )
@@ -1468,6 +1913,7 @@ private fun ObservacionesTab(incidencia: IncidenciaLocal, viewModel: IncidenciaV
     val observaciones by viewModel.getObservaciones(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
     var showDialog by remember { mutableStateOf(false) }
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF5F5F5))) {
         if (observaciones.isEmpty()) {
@@ -1510,13 +1956,15 @@ private fun ObservacionesTab(incidencia: IncidenciaLocal, viewModel: IncidenciaV
             }
         }
 
-        FloatingActionButton(
-            onClick = { showDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = GREEN,
-            contentColor = Color.White
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Agregar observación")
+        if (!soloLectura) {
+            FloatingActionButton(
+                onClick = { showDialog = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                containerColor = GREEN,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Agregar observación")
+            }
         }
     }
 
@@ -1554,6 +2002,7 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
     val evidencias by viewModel.getEvidencias(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
     var showSheet by remember { mutableStateOf(false) }
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
 
     val cameraImageUri = remember { mutableStateOf<android.net.Uri?>(null) }
 
@@ -1648,13 +2097,15 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
             }
         }
 
-        FloatingActionButton(
-            onClick = { showSheet = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = GREEN,
-            contentColor = Color.White
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+        if (!soloLectura) {
+            FloatingActionButton(
+                onClick = { showSheet = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                containerColor = GREEN,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Agregar evidencia")
+            }
         }
     }
 
@@ -1705,6 +2156,8 @@ private fun KitsTab(
         .getKitsAsignadosPorIncidencia(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
     val kitsEntregaHabilitada = kitsAsignados.firstOrNull()?.kitsEntregaHabilitada == true
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
+    var expandedKitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     if (kitsAsignados.isEmpty()) {
         Box(
@@ -1768,9 +2221,37 @@ private fun KitsTab(
             )
         }
 
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { expandedKitIds = kitsAsignados.map { it.uuidKitAsignado }.toSet() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Expandir todos", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = { expandedKitIds = emptySet() },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Contraer todos", fontSize = 12.sp)
+                }
+            }
+        }
+
         items(kitsAsignados, key = { it.uuidKitAsignado }) { kit ->
             KitAsignadoCard(
                 kit = kit,
+                soloLecturaIncidencia = soloLectura,
+                expanded = kit.uuidKitAsignado in expandedKitIds,
+                onToggleExpanded = {
+                    expandedKitIds = if (kit.uuidKitAsignado in expandedKitIds) {
+                        expandedKitIds - kit.uuidKitAsignado
+                    } else {
+                        expandedKitIds + kit.uuidKitAsignado
+                    }
+                },
                 kitViewModel = kitViewModel
             )
         }
@@ -1779,6 +2260,9 @@ private fun KitsTab(
 @Composable
 private fun KitAsignadoCard(
     kit: KitAsignadoLocal,
+    soloLecturaIncidencia: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
     kitViewModel: KitViewModel
 ) {
     val articulos by kitViewModel
@@ -1786,6 +2270,10 @@ private fun KitAsignadoCard(
         .collectAsState(initial = emptyList())
 
     var descripcionEntrega by remember { mutableStateOf(kit.descripcionEntrega ?: "") }
+    val kitConfirmadoSincronizado = kit.estadoSync == EstadoSync.SINCRONIZADO &&
+        (kit.estadoEntrega == "ENTREGADO" || kit.estadoEntrega == "PARCIAL")
+    val kitSoloLectura = soloLecturaIncidencia || kit.estadoEntrega == "ENTREGADO" || kitConfirmadoSincronizado
+    val articulosConfirmados = articulos.count { it.confirmado }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1798,6 +2286,9 @@ private fun KitAsignadoCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpanded() },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -1816,6 +2307,11 @@ private fun KitAsignadoCard(
                     Text(
                         kit.nombreFamilia ?: "Familia / persona asignada",
                         fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                    Text(
+                        "$articulosConfirmados/${articulos.size} artículos",
+                        fontSize = 11.sp,
                         color = Color.Gray
                     )
                 }
@@ -1840,6 +2336,17 @@ private fun KitAsignadoCard(
                         }
                     )
                 }
+                IconButton(onClick = onToggleExpanded, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Contraer kit" else "Expandir kit",
+                        tint = Color.Gray
+                    )
+                }
+            }
+
+            if (!expanded) {
+                return@Column
             }
 
             if (articulos.isEmpty()) {
@@ -1861,11 +2368,14 @@ private fun KitAsignadoCard(
                                     RoundedCornerShape(8.dp)
                                 )
                                 .padding(horizontal = 6.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Checkbox(
                                 checked = articulo.confirmado,
-                                onCheckedChange = if (kit.kitsEntregaHabilitada) {
+                                modifier = Modifier.size(40.dp),
+                                enabled = !kitSoloLectura && kit.kitsEntregaHabilitada && !articulo.confirmado,
+                                onCheckedChange = if (!kitSoloLectura && kit.kitsEntregaHabilitada && !articulo.confirmado) {
                                     { checked ->
                                         kitViewModel.actualizarConfirmacionArticulo(
                                             articulo = articulo,
@@ -1892,6 +2402,7 @@ private fun KitAsignadoCard(
 
                             Text(
                                 "x${articulo.cantidadAsignada}",
+                                modifier = Modifier.widthIn(min = 36.dp),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -1927,6 +2438,34 @@ private fun KitAsignadoCard(
                 }
             }
 
+            if (kitSoloLectura) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF3F4F6)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = Color(0xFF546E7A),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            if (soloLecturaIncidencia) "Caso cerrado: kits en modo solo lectura"
+                            else "Entrega sincronizada: no se puede modificar",
+                            color = Color(0xFF546E7A),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = descripcionEntrega,
                 onValueChange = { descripcionEntrega = it },
@@ -1937,7 +2476,7 @@ private fun KitAsignadoCard(
                 },
                 minLines = 2,
                 maxLines = 4,
-                enabled = kit.kitsEntregaHabilitada,
+                enabled = !kitSoloLectura && kit.kitsEntregaHabilitada,
                 shape = RoundedCornerShape(10.dp)
             )
 
@@ -1955,7 +2494,7 @@ private fun KitAsignadoCard(
                         )
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = kit.kitsEntregaHabilitada
+                    enabled = !kitSoloLectura && kit.kitsEntregaHabilitada
                 ) {
                     Text("Guardar parcial")
                 }
@@ -1969,7 +2508,7 @@ private fun KitAsignadoCard(
                         )
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = kit.kitsEntregaHabilitada,
+                    enabled = !kitSoloLectura && kit.kitsEntregaHabilitada,
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN)
                 ) {
                     Text("Marcar entregado")

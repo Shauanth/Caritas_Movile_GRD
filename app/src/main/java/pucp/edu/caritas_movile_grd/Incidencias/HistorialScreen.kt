@@ -57,8 +57,11 @@ val PARROQUIA_MAP = mapOf(
 
 private val STATUS_LIST = listOf(
     "ABIERTO", "ASIGNADO", "DATA RECOPILADA", "EN EVALUACION",
-    "APROBADO", "ATENDIDO", "SEGUIMIENTO ABIERTO", "CERRADO"
+    "APROBADO", "ATENDIDO", "SEGUIMIENTO ABIERTO", "CERRADO", "RECHAZADO"
 )
+
+private val VISIBILIDAD_FILTERS = listOf("Activas", "Cerradas", "Todas")
+private val ESTADOS_NO_ACCIONABLES = setOf("CERRADO", "RECHAZADO")
 
 private val CATEGORIAS_FILTER = listOf(
     "Todas", "Incendios", "Inundaciones", "Derrumbes",
@@ -74,6 +77,38 @@ private fun categoriaIncidencia(incidencia: IncidenciaLocal): String {
         ?.takeIf { it.isNotBlank() }
         ?: CATEGORIA_MAP[incidencia.idCatalogoTipo]
         ?: "Tipo ${incidencia.idCatalogoTipo}"
+}
+
+private fun estadoNormalizado(estado: String): String = estado.trim().uppercase(Locale.getDefault())
+
+private fun esIncidenciaCerrada(incidencia: IncidenciaLocal): Boolean =
+    estadoNormalizado(incidencia.estado) in ESTADOS_NO_ACCIONABLES
+
+private fun textoBusqueda(incidencia: IncidenciaLocal): String = listOfNotNull(
+    incidencia.codigoCasoRemoto,
+    "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}",
+    incidencia.tipoEventoNombre,
+    CATEGORIA_MAP[incidencia.idCatalogoTipo],
+    incidencia.distrito,
+    incidencia.parroquiaNombre,
+    PARROQUIA_MAP[incidencia.idParroquia],
+    incidencia.nombre,
+    incidencia.descripcion
+).joinToString(" ")
+
+private fun emptyIncidenciasMessage(
+    selectedVisibilidad: String,
+    searchQuery: String,
+    selectedCategoria: String,
+    statusFilter: String?
+): String {
+    val hayFiltros = searchQuery.isNotBlank() || selectedCategoria != "Todas" || statusFilter != null
+    return when {
+        hayFiltros -> "No se encontraron incidencias con los filtros aplicados."
+        selectedVisibilidad == "Cerradas" -> "No hay incidencias cerradas."
+        selectedVisibilidad == "Activas" -> "No hay incidencias activas asignadas."
+        else -> "No se encontraron incidencias con los filtros aplicados."
+    }
 }
 // ── Color helpers ────────────────────────────────────────────────────────────
 
@@ -241,18 +276,28 @@ fun GRDScreen(
     var statusFilter      by remember { mutableStateOf<String?>(null) }
     var categoriaExpanded by remember { mutableStateOf(false) }
     var selectedCategoria by remember { mutableStateOf("Todas") }
+    var selectedVisibilidad by remember { mutableStateOf("Activas") }
 
-    val filtradas = incidencias.filter { inc ->
-        val matchStatus   = statusFilter == null || inc.estado == statusFilter
+    val filtradasParaContadores = incidencias.filter { inc ->
+        val matchVisibilidad = when (selectedVisibilidad) {
+            "Activas" -> !esIncidenciaCerrada(inc)
+            "Cerradas" -> esIncidenciaCerrada(inc)
+            else -> true
+        }
         val matchSearch   = searchQuery.isBlank() ||
-            inc.nombre.contains(searchQuery, ignoreCase = true) ||
-            inc.descripcion.contains(searchQuery, ignoreCase = true)
+            textoBusqueda(inc).contains(searchQuery, ignoreCase = true)
         val matchCategoria = selectedCategoria == "Todas" ||
-            CATEGORIA_MAP[inc.idCatalogoTipo] == selectedCategoria
-        matchStatus && matchSearch && matchCategoria
+            categoriaIncidencia(inc).equals(selectedCategoria, ignoreCase = true)
+        matchVisibilidad && matchSearch && matchCategoria
     }
 
-    val countMap = STATUS_LIST.associateWith { s -> incidencias.count { it.estado == s } }
+    val filtradas = filtradasParaContadores.filter { inc ->
+        statusFilter == null || inc.estado.equals(statusFilter, ignoreCase = true)
+    }
+
+    val countMap = STATUS_LIST.associateWith { s ->
+        filtradasParaContadores.count { it.estado.equals(s, ignoreCase = true) }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -303,7 +348,7 @@ fun GRDScreen(
                             modifier = Modifier.padding(start = 8.dp)
                         ) {
                             Text(
-                                "Mostrar todos (${incidencias.size})",
+                                "Mostrar todos (${filtradasParaContadores.size})",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -317,7 +362,7 @@ fun GRDScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Búsqueda de incidentes...", fontSize = 14.sp) },
+                    placeholder = { Text("Buscar por código, distrito o tipo...", fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -334,6 +379,28 @@ fun GRDScreen(
             }
 
             // ── Filtro de categoría ───────────────────────────────────────
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(VISIBILIDAD_FILTERS) { filtro ->
+                        FilterChip(
+                            selected = selectedVisibilidad == filtro,
+                            onClick = {
+                                selectedVisibilidad = filtro
+                                statusFilter = null
+                            },
+                            label = { Text(filtro, fontSize = 13.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
             item {
                 ExposedDropdownMenuBox(
                     expanded = categoriaExpanded,
@@ -388,7 +455,12 @@ fun GRDScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No hay incidencias que coincidan con los filtros",
+                            emptyIncidenciasMessage(
+                                selectedVisibilidad = selectedVisibilidad,
+                                searchQuery = searchQuery,
+                                selectedCategoria = selectedCategoria,
+                                statusFilter = statusFilter
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
@@ -423,6 +495,7 @@ fun IncidenciaCard(
         ?: "Sin ubicación"
     val grdCode = incidencia.codigoCasoRemoto
     ?: "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}"
+    val soloLectura = esIncidenciaCerrada(incidencia)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -528,27 +601,43 @@ fun IncidenciaCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             // ─ Botones de acción ─
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { /* pendiente */ },
-                    enabled = false,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-                OutlinedButton(
-                    onClick = onSubirEvidencia,
-                    modifier = Modifier.weight(1f),
+            if (soloLectura) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))
+                    color = Color(0xFFF5F5F5)
                 ) {
-                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Subir Evidencia", fontSize = 12.sp)
+                    Text(
+                        "Caso cerrado: solo lectura",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF546E7A),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onRealizarActividad,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    OutlinedButton(
+                        onClick = onSubirEvidencia,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))
+                    ) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Subir Evidencia", fontSize = 12.sp)
+                    }
                 }
             }
         }

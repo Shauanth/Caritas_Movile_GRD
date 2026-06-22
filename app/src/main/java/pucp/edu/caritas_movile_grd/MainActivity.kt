@@ -27,8 +27,6 @@ import pucp.edu.caritas_movile_grd.Incidencias.IncidenciaLocal
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaRepository
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaViewModel
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaScreen
-import pucp.edu.caritas_movile_grd.Cursos.CursoRepository
-import pucp.edu.caritas_movile_grd.Cursos.CursoViewModel
 import pucp.edu.caritas_movile_grd.Kits.EntregaKitScreen
 import pucp.edu.caritas_movile_grd.Kits.KitRepository
 import pucp.edu.caritas_movile_grd.Kits.KitViewModel
@@ -64,7 +62,6 @@ fun AppNavigation() {
         loginDao = database.loginDao()
     )
     val evidenciaRepository = EvidenciaRepository(database.evidenciaDao())
-    val cursoRepository = CursoRepository(database.cursoDao())
     val kitRepository = KitRepository(database.kitDao())
     val simulacroRepository = SimulacroRepository(database.simulacroDao())
     val masterRepository = MasterRepository(database.masterDao())
@@ -111,15 +108,11 @@ fun AppNavigation() {
             val incidenciaViewModel: IncidenciaViewModel = viewModel(
                 factory = GenericViewModelFactory { IncidenciaViewModel(incidenciaRepository) }
             )
-            val cursoViewModel: CursoViewModel = viewModel(
-                factory = GenericViewModelFactory { CursoViewModel(cursoRepository) }
-            )
             val simulacroViewModel: SimulacroViewModel = viewModel(
                 factory = GenericViewModelFactory { SimulacroViewModel(simulacroRepository) }
             )
             MainScreen(
                 incidenciaViewModel = incidenciaViewModel,
-                cursoViewModel = cursoViewModel,
                 simulacroViewModel = simulacroViewModel,
                 syncViewModel = syncViewModel,
                 onReportarIncidencia = { navController.navigate("reportar_incidencia") },

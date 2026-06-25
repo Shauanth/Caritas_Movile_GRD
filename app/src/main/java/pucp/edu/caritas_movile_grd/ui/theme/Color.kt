@@ -21,10 +21,13 @@ val CaritasAmberLight   = Color(0xFFFFE0B2)
 val CaritasOnAmber      = Color(0xFFFFFFFF)
 val CaritasOnAmberDark  = Color(0xFF3E0700)
 
-// Neutrals
-val CaritasSurface      = Color(0xFFF8FBF8)
-val CaritasBackground   = Color(0xFFF2F7F2)
-val CaritasOutline      = Color(0xFFBDCCBD)
+// Neutrals — texto y superficies en gris neutro (no verde) para una lectura calmada
+val CaritasSurface      = Color(0xFFFCFDFC)
+val CaritasBackground   = Color(0xFFF4F6F4)
+val CaritasOutline      = Color(0xFFCBD2CB)
+val CaritasInk          = Color(0xFF1A1C19)  // texto principal casi negro
+val CaritasInkMuted     = Color(0xFF5C6660)  // texto secundario gris suave
+val CaritasSurfaceMuted = Color(0xFFEDF1ED)  // contenedor neutro claro (chips, paneles)
 
 // Dark theme variants
 val CaritasGreenDark80  = Color(0xFF7DDBA9)

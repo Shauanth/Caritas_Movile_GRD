@@ -23,12 +23,12 @@ private val LightColorScheme = lightColorScheme(
     onTertiaryContainer    = CaritasOnAmberDark,
 
     background             = CaritasBackground,
-    onBackground           = CaritasOnGreenDark,
+    onBackground           = CaritasInk,
 
     surface                = CaritasSurface,
-    onSurface              = CaritasOnGreenDark,
-    surfaceVariant         = CaritasGreenLight,
-    onSurfaceVariant       = CaritasGreenDark,
+    onSurface              = CaritasInk,
+    surfaceVariant         = CaritasSurfaceMuted,
+    onSurfaceVariant       = CaritasInkMuted,
 
     outline                = CaritasOutline,
 )

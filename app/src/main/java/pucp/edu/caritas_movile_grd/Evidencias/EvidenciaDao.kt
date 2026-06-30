@@ -17,7 +17,7 @@ interface EvidenciaDao {
     @Delete
     suspend fun deleteEvidencia(evidencia: EvidenciaLocal)
 
-    @Query("SELECT * FROM evidencia_local WHERE estadoSync = 'PENDIENTE_SUBIDA'")
+    @Query("SELECT * FROM evidencia_local WHERE estadoSync IN ('PENDIENTE_SUBIDA', 'NUEVO')")
     suspend fun getEvidenciasPendientes(): List<EvidenciaLocal>
 
     @Query("UPDATE evidencia_local SET estadoSync = 'PENDIENTE_ELIMINACION' WHERE uuidEvidencia = :uuidEvidencia")

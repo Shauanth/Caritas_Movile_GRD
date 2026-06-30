@@ -115,7 +115,7 @@ class MobileSyncApi(
             }
 
             try {
-                Log.d("MobileSyncApi", "POST $path payload=$payload")
+                Log.d("MobileSyncApi", "POST $path payload=${payload.toSafeLogString()}")
 
                 connection.outputStream.use { output ->
                     output.write(payload.toString().toByteArray(Charsets.UTF_8))
@@ -153,4 +153,12 @@ class MobileSyncApi(
             }
         }
     }
+}
+
+private fun JSONObject.toSafeLogString(): String {
+    val copy = JSONObject(toString())
+    if (copy.has("base64")) {
+        copy.put("base64", "<omitted>")
+    }
+    return copy.toString()
 }

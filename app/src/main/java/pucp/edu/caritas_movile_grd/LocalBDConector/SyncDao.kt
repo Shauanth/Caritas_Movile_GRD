@@ -39,7 +39,7 @@ interface SyncDao {
     suspend fun getAfectadosPendientesParaSincronizar(): List<AfectadoLocal>
 
     // 5. Obtener fotos pendientes de subir
-    @Query("SELECT * FROM evidencia_local WHERE estadoSync = 'PENDIENTE_SUBIDA'")
+    @Query("SELECT * FROM evidencia_local WHERE estadoSync IN ('PENDIENTE_SUBIDA', 'NUEVO')")
     suspend fun getEvidenciasPendientes(): List<EvidenciaLocal>
 
     // Cuando el backend responde, actualizamos el ID real y el estado a SINCRONIZADO

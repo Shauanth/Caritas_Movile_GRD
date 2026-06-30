@@ -2015,7 +2015,7 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                     nombreArchivo = "foto_${System.currentTimeMillis()}.jpg",
                     contentType = "image/jpeg",
                     rutaLocal = uri.toString(),
-                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.PENDIENTE_SUBIDA
                 )
             )
         }
@@ -2030,7 +2030,7 @@ private fun EvidenciasTab(incidencia: IncidenciaLocal, viewModel: IncidenciaView
                     nombreArchivo = "imagen_${System.currentTimeMillis()}.jpg",
                     contentType = "image/jpeg",
                     rutaLocal = uri.toString(),
-                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+                    estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.PENDIENTE_SUBIDA
                 )
             )
         }

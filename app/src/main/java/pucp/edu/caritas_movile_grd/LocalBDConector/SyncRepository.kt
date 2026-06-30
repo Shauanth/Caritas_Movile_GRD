@@ -24,6 +24,7 @@ import pucp.edu.caritas_movile_grd.Simulacros.SimulacroDao
 import pucp.edu.caritas_movile_grd.Simulacros.SimulacroRepository
 import pucp.edu.caritas_movile_grd.login.LoginDao
 import kotlinx.coroutines.flow.firstOrNull
+private const val TAG_SYNC_EVIDENCIAS = "SyncEvidencias"
 data class SyncResult(
     val incidenciasSincronizadas: Int,
     val afectadosSincronizados: Int,
@@ -182,8 +183,13 @@ class SyncRepository(
 
         // 3. Tercera pasada: sincronizar evidencias pendientes
         val evidenciasPendientes = syncDao.getEvidenciasPendientes()
+        Log.d(TAG_SYNC_EVIDENCIAS, "Evidencias pendientes=${evidenciasPendientes.size}")
 
         for (evidencia in evidenciasPendientes) {
+            Log.d(
+                TAG_SYNC_EVIDENCIAS,
+                "Sincronizando evidencia uuid=${evidencia.uuidEvidencia}, uuidReferencia=${evidencia.uuidReferencia}"
+            )
             val incidencia = syncDao.getIncidenciaPorUuid(evidencia.uuidReferencia)
 
             if (incidencia == null) {

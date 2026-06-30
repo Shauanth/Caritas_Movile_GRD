@@ -29,6 +29,10 @@ class MobileSyncApi(
     suspend fun eliminarEvidencia(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/evidencias/eliminar", payload)
     }
+
+    suspend fun eliminarAfectado(payload: JSONObject): JSONObject {
+        return postJson("/api/mobile/sync/afectados/eliminar", payload)
+    }
     suspend fun sincronizarObservacion(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/observaciones", payload)
     }

@@ -65,7 +65,9 @@ private val STATUS_LIST = listOf(
 )
 
 private val VISIBILIDAD_FILTERS = listOf("Activas", "Cerradas", "Todas")
-private val ESTADOS_NO_ACCIONABLES = setOf("CERRADO", "RECHAZADO")
+private val ESTADOS_NO_ACCIONABLES = setOf(
+    "CERRADO", "CERRADA", "RECHAZADO", "CANCELADO", "CANCELADA", "ANULADO", "ANULADA"
+)
 
 private val CATEGORIAS_FILTER = listOf(
     "Todas", "Incendios", "Inundaciones", "Derrumbes",

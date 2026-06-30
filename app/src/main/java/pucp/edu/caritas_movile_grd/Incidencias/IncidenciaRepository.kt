@@ -1,6 +1,7 @@
 package pucp.edu.caritas_movile_grd.Incidencias
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal
 import org.json.JSONObject
 import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
@@ -26,6 +27,7 @@ class IncidenciaRepository(
 
     fun getAfectados(uuidIncidencia: String): Flow<List<AfectadoLocal>> =
         incidenciaDao.getAfectadosByIncidencia(uuidIncidencia)
+            .map { lista -> lista.filter { it.estadoSync != EstadoSync.PENDIENTE_ELIMINACION } }
 
     suspend fun guardarIncidencia(incidencia: IncidenciaLocal) {
         incidenciaDao.insertIncidencia(incidencia)
@@ -42,7 +44,11 @@ class IncidenciaRepository(
     }
 
     suspend fun eliminarAfectado(afectado: AfectadoLocal) {
-        incidenciaDao.deleteAfectado(afectado)
+        if (afectado.estadoSync == EstadoSync.NUEVO || afectado.idAfectadoRemoto == null) {
+            incidenciaDao.deleteAfectado(afectado)
+        } else {
+            incidenciaDao.marcarAfectadoParaEliminar(afectado.uuidAfectado)
+        }
     }
     suspend fun guardarObservacion(observacion: ObservacionLocal) {
         incidenciaDao.insertObservacion(observacion)

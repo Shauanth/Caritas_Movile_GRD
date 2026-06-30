@@ -220,6 +220,21 @@ class SyncRepository(
             }
         }
 
+        // 3a. Notificar al servidor los afectados eliminados en móvil.
+        val afectadosPendientesEliminacion = syncDao.getAfectadosPendientesEliminacion()
+        for (afectado in afectadosPendientesEliminacion) {
+            try {
+                val payload = JSONObject().apply {
+                    put("idAfectadoRemoto", afectado.idAfectadoRemoto)
+                    put("uuidAfectado", afectado.uuidAfectado)
+                }
+                mobileSyncApi.eliminarAfectado(payload)
+                syncDao.deleteAfectadoByUuid(afectado.uuidAfectado)
+            } catch (ex: Exception) {
+                errores.add("Error al eliminar afectado ${afectado.uuidAfectado}: ${ex.message}")
+            }
+        }
+
         // 3b. Notificar al servidor las evidencias eliminadas en móvil.
         // NO se borra de Room aquí — el cleanup del step 7 (download) las eliminará
         // cuando el servidor confirme que ya no las devuelve en la lista activa.

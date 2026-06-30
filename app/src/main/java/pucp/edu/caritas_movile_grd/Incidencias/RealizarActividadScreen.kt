@@ -51,7 +51,9 @@ import pucp.edu.caritas_movile_grd.Kits.KitAsignadoLocal
 import pucp.edu.caritas_movile_grd.Kits.KitArticuloAsignadoLocal
 private val TIPO_DOC_MAP = mapOf(1 to "DNI", 2 to "CE", 3 to "Pasaporte", 4 to "Otro")
 private val GREEN = Color(0xFF009850)
-private val ESTADOS_SOLO_LECTURA = setOf("CERRADO", "RECHAZADO")
+private val ESTADOS_SOLO_LECTURA = setOf(
+    "CERRADO", "CERRADA", "RECHAZADO", "CANCELADO", "CANCELADA", "ANULADO", "ANULADA"
+)
 private val GENEROS_AFECTADO = listOf("Femenino", "Masculino", "Otro", "Prefiere no decir")
 private val PARENTESCOS_AFECTADO = listOf(
     "Jefe(a) de Hogar", "Padre", "Madre", "Hijo(a)",

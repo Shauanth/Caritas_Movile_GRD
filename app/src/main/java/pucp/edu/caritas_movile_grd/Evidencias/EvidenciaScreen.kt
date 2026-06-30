@@ -234,17 +234,15 @@ private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
                 when {
                     tipo == TipoEvidencia.IMAGEN && urlRemota != null -> {
                         val conn = java.net.URL(urlRemota).openConnection() as java.net.HttpURLConnection
-                        conn.connectTimeout = 10_000
-                        conn.readTimeout = 15_000
+                        conn.connectTimeout = 10_000; conn.readTimeout = 15_000
                         try {
-                            val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                            conn.inputStream.use { BitmapFactory.decodeStream(it, null, opts)?.asImageBitmap() }
+                            val bytes = conn.inputStream.readBytes()
+                            decodificarMiniatura(bytes, 512)
                         } finally { conn.disconnect() }
                     }
                     tipo == TipoEvidencia.IMAGEN -> {
                         context.contentResolver.openInputStream(uri)?.use { stream ->
-                            val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                            BitmapFactory.decodeStream(stream, null, opts)?.asImageBitmap()
+                            decodificarMiniatura(stream.readBytes(), 512)
                         }
                     }
                     tipo == TipoEvidencia.DOCUMENTO && esPdf -> {
@@ -366,6 +364,24 @@ private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
 
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.then(Modifier.clickable(indication = null, interactionSource = null, onClick = onClick))
+
+private fun calcularSampleSize(width: Int, height: Int, maxW: Int, maxH: Int): Int {
+    var sample = 1
+    if (height > maxH || width > maxW) {
+        val halfH = height / 2
+        val halfW = width / 2
+        while (halfH / sample >= maxH && halfW / sample >= maxW) sample *= 2
+    }
+    return sample
+}
+
+private fun decodificarMiniatura(bytes: ByteArray, maxPx: Int): ImageBitmap? {
+    val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOpts)
+    val sample = calcularSampleSize(boundsOpts.outWidth, boundsOpts.outHeight, maxPx, maxPx)
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        ?.asImageBitmap()
+}
 
 private fun obtenerNombreArchivo(context: Context, uri: Uri): String {
     // Intenta obtener el nombre real del archivo vía ContentResolver

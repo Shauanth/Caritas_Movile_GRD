@@ -18,6 +18,9 @@ interface KitDao {
     @Query("SELECT * FROM entrega_kit_local WHERE uuidIncidencia = :uuidIncidencia ORDER BY fechaEntrega DESC")
     fun getEntregasByIncidencia(uuidIncidencia: String): Flow<List<EntregaKitLocal>>
 
+    @Query("SELECT * FROM entrega_kit_local WHERE uuidEntrega = :uuidEntrega LIMIT 1")
+    suspend fun getEntregaByUuid(uuidEntrega: String): EntregaKitLocal?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEntrega(entrega: EntregaKitLocal)
 
@@ -37,6 +40,13 @@ interface KitDao {
         ORDER BY nombreFamilia ASC, tipoKit ASC
     """)
     fun getKitsAsignadosPorIncidencia(uuidIncidencia: String): Flow<List<KitAsignadoLocal>>
+
+    @Query("""
+        SELECT * FROM kit_asignado_local
+        WHERE uuidIncidencia = :uuidIncidencia
+        ORDER BY nombreFamilia ASC, tipoKit ASC
+    """)
+    suspend fun getKitsAsignadosPorIncidenciaSync(uuidIncidencia: String): List<KitAsignadoLocal>
 
     @Query("""
         SELECT * FROM kit_articulo_asignado_local
@@ -145,4 +155,21 @@ interface KitDao {
     suspend fun marcarTodosArticulosDeKitEntregados(
         uuidKitAsignado: String
     )
+
+    @Transaction
+    suspend fun confirmarEntregaKitAsignado(
+        kit: KitAsignadoLocal,
+        entrega: EntregaKitLocal,
+        estadoEntrega: String
+    ) {
+        insertEntrega(entrega)
+        marcarKitEntregado(
+            uuidKitAsignado = kit.uuidKitAsignado,
+            estadoEntrega = estadoEntrega,
+            fechaEntrega = entrega.fechaEntrega,
+            descripcionEntrega = entrega.descripcionAyuda,
+            evidenciaLocalUri = entrega.uuidEntrega,
+            estadoSync = pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync.NUEVO
+        )
+    }
 }

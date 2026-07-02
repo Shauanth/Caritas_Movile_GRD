@@ -221,7 +221,10 @@ private fun EntregaKitCard(entrega: EntregaKitLocal) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Gray)
                     Text(
-                        entrega.uuidAfectado.takeLast(8),
+                        entrega.uuidAfectado?.takeLast(8)
+                            ?: entrega.uuidGrupoFamiliar?.takeLast(8)
+                            ?: entrega.refIdFamilia?.takeLast(8)
+                            ?: "Sin referencia",
                         fontSize = 11.sp,
                         color = Color.Gray
                     )

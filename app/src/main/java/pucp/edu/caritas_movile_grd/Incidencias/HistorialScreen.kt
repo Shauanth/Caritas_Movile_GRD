@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -25,12 +26,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import pucp.edu.caritas_movile_grd.ui.theme.estadoVisual
+import pucp.edu.caritas_movile_grd.ui.theme.iconoTipoEvento
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -57,7 +61,12 @@ val PARROQUIA_MAP = mapOf(
 
 private val STATUS_LIST = listOf(
     "ABIERTO", "ASIGNADO", "DATA RECOPILADA", "EN EVALUACION",
-    "APROBADO", "ATENDIDO", "SEGUIMIENTO ABIERTO", "CERRADO"
+    "APROBADO", "ATENDIDO", "SEGUIMIENTO ABIERTO", "CERRADO", "RECHAZADO"
+)
+
+private val VISIBILIDAD_FILTERS = listOf("Activas", "Cerradas", "Todas")
+private val ESTADOS_NO_ACCIONABLES = setOf(
+    "CERRADO", "CERRADA", "RECHAZADO", "CANCELADO", "CANCELADA", "ANULADO", "ANULADA"
 )
 
 private val CATEGORIAS_FILTER = listOf(
@@ -75,85 +84,47 @@ private fun categoriaIncidencia(incidencia: IncidenciaLocal): String {
         ?: CATEGORIA_MAP[incidencia.idCatalogoTipo]
         ?: "Tipo ${incidencia.idCatalogoTipo}"
 }
+
+private fun estadoNormalizado(estado: String): String = estado.trim().uppercase(Locale.getDefault())
+
+private fun esIncidenciaCerrada(incidencia: IncidenciaLocal): Boolean =
+    estadoNormalizado(incidencia.estado) in ESTADOS_NO_ACCIONABLES
+
+private fun textoBusqueda(incidencia: IncidenciaLocal): String = listOfNotNull(
+    incidencia.codigoCasoRemoto,
+    "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}",
+    incidencia.tipoEventoNombre,
+    CATEGORIA_MAP[incidencia.idCatalogoTipo],
+    incidencia.distrito,
+    incidencia.parroquiaNombre,
+    PARROQUIA_MAP[incidencia.idParroquia],
+    incidencia.nombre,
+    incidencia.descripcion
+).joinToString(" ")
+
+private fun emptyIncidenciasMessage(
+    selectedVisibilidad: String,
+    searchQuery: String,
+    selectedCategoria: String,
+    statusFilter: String?
+): String {
+    val hayFiltros = searchQuery.isNotBlank() || selectedCategoria != "Todas" || statusFilter != null
+    return when {
+        hayFiltros -> "No se encontraron incidencias con los filtros aplicados."
+        selectedVisibilidad == "Cerradas" -> "No hay incidencias cerradas."
+        selectedVisibilidad == "Activas" -> "No hay incidencias activas asignadas."
+        else -> "No se encontraron incidencias con los filtros aplicados."
+    }
+}
 // ── Color helpers ────────────────────────────────────────────────────────────
+// Delegan en estadoVisual() (ui.theme) para compartir la paleta con Simulacros.
 
-/** Color de fondo de la tarjeta de estado */
-private fun statusBg(estado: String) = when (estado) {
-    "ABIERTO"             -> Color(0xFFFFFDE7)
-    "ASIGNADO"            -> Color(0xFFE3F2FD)
-    "DATA RECOPILADA"     -> Color(0xFFFFF3E0)
-    "EN EVALUACION"       -> Color(0xFFF3E5F5)
-    "APROBADO"            -> Color(0xFFE8F5E9)
-    "ATENDIDO"            -> Color(0xFFE0F7FA)
-    "SEGUIMIENTO ABIERTO" -> Color(0xFFE0F2F1)
-    "CERRADO"             -> Color(0xFFF5F5F5)
-    else                  -> Color(0xFFF5F5F5)
-}
-
-/** Color del ícono/badge dentro de la tarjeta */
-private fun statusIconBg(estado: String) = when (estado) {
-    "ABIERTO"             -> Color(0xFFF9A825)
-    "ASIGNADO"            -> Color(0xFF1565C0)
-    "DATA RECOPILADA"     -> Color(0xFFE64A19)
-    "EN EVALUACION"       -> Color(0xFF6A1B9A)
-    "APROBADO"            -> Color(0xFF2E7D32)
-    "ATENDIDO"            -> Color(0xFF00897B)
-    "SEGUIMIENTO ABIERTO" -> Color(0xFF00695C)
-    "CERRADO"             -> Color(0xFF546E7A)
-    else                  -> Color(0xFF546E7A)
-}
-
-/** Color del texto de la tarjeta */
-private fun statusTextColor(estado: String) = when (estado) {
-    "ABIERTO"             -> Color(0xFFF57F17)
-    "ASIGNADO"            -> Color(0xFF0D47A1)
-    "DATA RECOPILADA"     -> Color(0xFFBF360C)
-    "EN EVALUACION"       -> Color(0xFF4A148C)
-    "APROBADO"            -> Color(0xFF1B5E20)
-    "ATENDIDO"            -> Color(0xFF006064)
-    "SEGUIMIENTO ABIERTO" -> Color(0xFF004D40)
-    "CERRADO"             -> Color(0xFF37474F)
-    else                  -> Color(0xFF37474F)
-}
-
-/** Color de borde de la tarjeta */
-private fun statusBorderColor(estado: String) = when (estado) {
-    "ABIERTO"             -> Color(0xFFFDD835)
-    "ASIGNADO"            -> Color(0xFF90CAF9)
-    "DATA RECOPILADA"     -> Color(0xFFFFAB91)
-    "EN EVALUACION"       -> Color(0xFFCE93D8)
-    "APROBADO"            -> Color(0xFFA5D6A7)
-    "ATENDIDO"            -> Color(0xFF80DEEA)
-    "SEGUIMIENTO ABIERTO" -> Color(0xFF80CBC4)
-    "CERRADO"             -> Color(0xFFB0BEC5)
-    else                  -> Color(0xFFB0BEC5)
-}
-
-/** Ícono asociado a cada estado */
-private fun statusIcon(estado: String): ImageVector = when (estado) {
-    "ABIERTO"             -> Icons.Default.Schedule
-    "ASIGNADO"            -> Icons.Default.Assignment
-    "DATA RECOPILADA"     -> Icons.Default.Assessment
-    "EN EVALUACION"       -> Icons.Default.CheckCircle
-    "APROBADO"            -> Icons.Default.CheckCircle
-    "ATENDIDO"            -> Icons.Default.Favorite
-    "SEGUIMIENTO ABIERTO" -> Icons.Default.TrackChanges
-    "CERRADO"             -> Icons.Default.Cancel
-    else                  -> Icons.Default.Cancel
-}
-
-/** Etiqueta corta para la tarjeta de estado */
-private fun statusLabel(estado: String) = when (estado) {
-    "ABIERTO"             -> "Abierto"
-    "ASIGNADO"            -> "Asignado"
-    "DATA RECOPILADA"     -> "Data"
-    "EN EVALUACION"       -> "Evaluación"
-    "APROBADO"            -> "Aprobado"
-    "ATENDIDO"            -> "Atendido"
-    "SEGUIMIENTO ABIERTO" -> "Seguimiento"
-    "CERRADO"             -> "Cerrado"
-    else                  -> estado
-}
+private fun statusBg(estado: String) = estadoVisual(estado).bg
+private fun statusIconBg(estado: String) = estadoVisual(estado).solido
+private fun statusTextColor(estado: String) = estadoVisual(estado).texto
+private fun statusBorderColor(estado: String) = estadoVisual(estado).borde
+private fun statusIcon(estado: String): ImageVector = estadoVisual(estado).icono
+private fun statusLabel(estado: String) = estadoVisual(estado).etiqueta
 
 // ── Tarjeta de estado (estilo web) ──────────────────────────────────────────
 @Composable
@@ -241,18 +212,28 @@ fun GRDScreen(
     var statusFilter      by remember { mutableStateOf<String?>(null) }
     var categoriaExpanded by remember { mutableStateOf(false) }
     var selectedCategoria by remember { mutableStateOf("Todas") }
+    var selectedVisibilidad by remember { mutableStateOf("Activas") }
 
-    val filtradas = incidencias.filter { inc ->
-        val matchStatus   = statusFilter == null || inc.estado == statusFilter
+    val filtradasParaContadores = incidencias.filter { inc ->
+        val matchVisibilidad = when (selectedVisibilidad) {
+            "Activas" -> !esIncidenciaCerrada(inc)
+            "Cerradas" -> esIncidenciaCerrada(inc)
+            else -> true
+        }
         val matchSearch   = searchQuery.isBlank() ||
-            inc.nombre.contains(searchQuery, ignoreCase = true) ||
-            inc.descripcion.contains(searchQuery, ignoreCase = true)
+            textoBusqueda(inc).contains(searchQuery, ignoreCase = true)
         val matchCategoria = selectedCategoria == "Todas" ||
-            CATEGORIA_MAP[inc.idCatalogoTipo] == selectedCategoria
-        matchStatus && matchSearch && matchCategoria
+            categoriaIncidencia(inc).equals(selectedCategoria, ignoreCase = true)
+        matchVisibilidad && matchSearch && matchCategoria
     }
 
-    val countMap = STATUS_LIST.associateWith { s -> incidencias.count { it.estado == s } }
+    val filtradas = filtradasParaContadores.filter { inc ->
+        statusFilter == null || inc.estado.equals(statusFilter, ignoreCase = true)
+    }
+
+    val countMap = STATUS_LIST.associateWith { s ->
+        filtradasParaContadores.count { it.estado.equals(s, ignoreCase = true) }
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -303,7 +284,7 @@ fun GRDScreen(
                             modifier = Modifier.padding(start = 8.dp)
                         ) {
                             Text(
-                                "Mostrar todos (${incidencias.size})",
+                                "Mostrar todos (${filtradasParaContadores.size})",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -317,7 +298,7 @@ fun GRDScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Búsqueda de incidentes...", fontSize = 14.sp) },
+                    placeholder = { Text("Buscar por código, distrito o tipo...", fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -334,6 +315,28 @@ fun GRDScreen(
             }
 
             // ── Filtro de categoría ───────────────────────────────────────
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(VISIBILIDAD_FILTERS) { filtro ->
+                        FilterChip(
+                            selected = selectedVisibilidad == filtro,
+                            onClick = {
+                                selectedVisibilidad = filtro
+                                statusFilter = null
+                            },
+                            label = { Text(filtro, fontSize = 13.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
             item {
                 ExposedDropdownMenuBox(
                     expanded = categoriaExpanded,
@@ -388,7 +391,12 @@ fun GRDScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "No hay incidencias que coincidan con los filtros",
+                            emptyIncidenciasMessage(
+                                selectedVisibilidad = selectedVisibilidad,
+                                searchQuery = searchQuery,
+                                selectedCategoria = selectedCategoria,
+                                statusFilter = statusFilter
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
@@ -414,8 +422,9 @@ fun IncidenciaCard(
     onRealizarActividad: () -> Unit,
     onSubirEvidencia: () -> Unit
 ) {
-    val textColor  = statusTextColor(incidencia.estado)
-    val badgeBg    = statusBg(incidencia.estado)
+    val visual     = estadoVisual(incidencia.estado)
+    val textColor  = visual.texto
+    val badgeBg    = visual.bg
     val categoria = categoriaIncidencia(incidencia)
     val ubicacion  = incidencia.distrito
         ?: incidencia.parroquiaNombre
@@ -423,49 +432,60 @@ fun IncidenciaCard(
         ?: "Sin ubicación"
     val grdCode = incidencia.codigoCasoRemoto
     ?: "LOCAL-${incidencia.uuidIncidencia.takeLast(8)}"
+    val soloLectura = esIncidenciaCerrada(incidencia)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onRealizarActividad() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
 
-            // ─ Título + código ─
+            // ─ Avatar de tipo + título + código ─
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.Top
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(visual.bg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = iconoTipoEvento(categoria),
+                        contentDescription = null,
+                        tint = visual.solido,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
-                    if (incidencia.nombre.isNotBlank()) {
-                        Text(
-                            text = incidencia.nombre,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color(0xFF1A1A1A)
-                        )
-                    } else {
-                        Text(
-                            text = incidencia.descripcion,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color(0xFF1A1A1A),
-                            maxLines = 1
-                        )
-                    }
                     Text(
                         text = "$grdCode · ${formatDate(incidencia.fechaUltimaModificacion)}",
-                        fontSize = 12.sp,
-                        color = Color(0xFF888888)
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = incidencia.nombre.ifBlank { incidencia.descripcion },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 20.sp,
+                        maxLines = 2
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // ─ Badges: categoría + estado ─
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -510,47 +530,61 @@ fun IncidenciaCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(Icons.Default.LocationOn, contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = Color(0xFF888888))
-                    Text(ubicacion, fontSize = 12.sp, color = Color(0xFF555555))
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(ubicacion, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(Icons.Default.People, contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = Color(0xFF888888))
-                    Text("${incidencia.numAfectados} afectados", fontSize = 12.sp, color = Color(0xFF555555))
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${incidencia.numAfectados} afectados", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             // ─ Botones de acción ─
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { /* pendiente */ },
-                    enabled = false,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-                val estadoCerrado = incidencia.estado.uppercase() in setOf("CERRADA", "CERRADO", "CANCELADA", "CANCELADO", "ANULADA", "ANULADO")
-                OutlinedButton(
-                    onClick = onSubirEvidencia,
-                    enabled = !estadoCerrado,
-                    modifier = Modifier.weight(1f),
+            if (soloLectura) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))
+                    color = Color(0xFFF5F5F5)
                 ) {
-                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Subir Evidencia", fontSize = 12.sp)
+                    Text(
+                        "Caso cerrado: solo lectura",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF546E7A),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onRealizarActividad,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Realizar Actividad", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    OutlinedButton(
+                        onClick = onSubirEvidencia,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF444444))
+                    ) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Subir Evidencia", fontSize = 12.sp)
+                    }
                 }
             }
         }

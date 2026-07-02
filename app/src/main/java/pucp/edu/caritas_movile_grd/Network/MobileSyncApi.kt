@@ -48,6 +48,10 @@ class MobileSyncApi(
     suspend fun finalizarRecopilacion(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/finalizar-recopilacion", payload)
     }    
+    suspend fun finalizarEntrega(payload: JSONObject): JSONObject {
+        // Backend debe implementar este endpoint para cerrar APROBADO -> ATENDIDO.
+        return postJson("/api/mobile/sync/finalizar-entrega", payload)
+    }
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
         val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
                    else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"
@@ -119,7 +123,7 @@ class MobileSyncApi(
             }
 
             try {
-                Log.d("MobileSyncApi", "POST $path payload=$payload")
+                Log.d("MobileSyncApi", "POST $path payload=${payload.toSafeLogString()}")
 
                 connection.outputStream.use { output ->
                     output.write(payload.toString().toByteArray(Charsets.UTF_8))
@@ -157,4 +161,12 @@ class MobileSyncApi(
             }
         }
     }
+}
+
+private fun JSONObject.toSafeLogString(): String {
+    val copy = JSONObject(toString())
+    if (copy.has("base64")) {
+        copy.put("base64", "<omitted>")
+    }
+    return copy.toString()
 }

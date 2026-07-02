@@ -63,9 +63,11 @@ class LoginViewModel(private val repository: LoginRepository) : ViewModel() {
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("x-mobile-sync-key", MobileApiConfig.MOBILE_SYNC_API_KEY)
                 doOutput = true
-                connectTimeout = 10_000
-                readTimeout = 10_000
+                connectTimeout = 45_000
+                readTimeout = 60_000
             }
             conn.outputStream.use { it.write(payload.toString().toByteArray()) }
             val code = conn.responseCode

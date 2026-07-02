@@ -197,6 +197,12 @@ interface SyncDao {
     """)
     suspend fun getEntregasPendientesParaSincronizar(): List<EntregaKitLocal>
 
+    @Query("SELECT * FROM entrega_kit_local WHERE uuidEntrega = :uuidEntrega LIMIT 1")
+    suspend fun getEntregaPorUuid(uuidEntrega: String): EntregaKitLocal?
+
+    @Query("SELECT * FROM evidencia_local WHERE uuidReferencia = :uuidReferencia AND estadoSync IN ('PENDIENTE_SUBIDA', 'NUEVO')")
+    suspend fun getEvidenciasPendientesPorReferencia(uuidReferencia: String): List<EvidenciaLocal>
+
     @Query("""
         UPDATE entrega_kit_local
         SET idEntregaRemota = :idRemoto,
@@ -206,5 +212,18 @@ interface SyncDao {
     suspend fun marcarEntregaComoSincronizada(
         uuidEntrega: String,
         idRemoto: String
+    )
+
+    @Query("""
+        UPDATE incidencia_local
+        SET estado = :estado,
+            estadoSync = 'SINCRONIZADO',
+            fechaUltimaModificacion = :fechaUltimaModificacion
+        WHERE uuidIncidencia = :uuidIncidencia
+    """)
+    suspend fun actualizarEstadoIncidencia(
+        uuidIncidencia: String,
+        estado: String,
+        fechaUltimaModificacion: Long
     )
 }

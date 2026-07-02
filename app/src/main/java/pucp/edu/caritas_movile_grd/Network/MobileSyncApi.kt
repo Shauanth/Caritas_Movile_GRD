@@ -48,6 +48,10 @@ class MobileSyncApi(
     suspend fun finalizarRecopilacion(payload: JSONObject): JSONObject {
         return postJson("/api/mobile/sync/finalizar-recopilacion", payload)
     }    
+    suspend fun finalizarEntrega(payload: JSONObject): JSONObject {
+        // Backend debe implementar este endpoint para cerrar APROBADO -> ATENDIDO.
+        return postJson("/api/mobile/sync/finalizar-entrega", payload)
+    }
     suspend fun obtenerIncidenciasAsignadas(idUsuarioGRD: String): JSONObject {
         val path = if (idUsuarioGRD.isBlank()) "/api/mobile/incidencias-asignadas"
                    else "/api/mobile/incidencias-asignadas?idUsuarioGRD=$idUsuarioGRD"

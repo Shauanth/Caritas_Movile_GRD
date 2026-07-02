@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class KitViewModel(private val repository: KitRepository) : ViewModel() {
 
@@ -35,10 +37,12 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
 
     fun actualizarConfirmacionArticulo(
         articulo: KitArticuloAsignadoLocal,
-        confirmado: Boolean
+        confirmado: Boolean,
+        onDone: () -> Unit = {}
     ) {
         viewModelScope.launch {
             repository.actualizarConfirmacionArticulo(articulo, confirmado)
+            onDone()
         }
     }
 
@@ -66,6 +70,38 @@ class KitViewModel(private val repository: KitRepository) : ViewModel() {
                 kit = kit,
                 descripcionEntrega = descripcionEntrega
             )
+        }
+    }
+
+    fun confirmarEntregaKitAsignado(
+        kit: KitAsignadoLocal,
+        articulos: List<KitArticuloAsignadoLocal>,
+        descripcionEntrega: String,
+        onResult: (Result<EntregaKitLocal>) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val entrega = repository.confirmarEntregaKitAsignado(
+                    kit = kit,
+                    articulos = articulos,
+                    descripcionEntrega = descripcionEntrega
+                )
+                onResult(Result.success(entrega))
+            } catch (ex: Exception) {
+                onResult(Result.failure(ex))
+            }
+        }
+    }
+
+    fun validarTodosKitsEntregados(
+        uuidIncidencia: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val completos = withContext(Dispatchers.IO) {
+                repository.todosKitsEntregados(uuidIncidencia)
+            }
+            onResult(completos)
         }
     }
 

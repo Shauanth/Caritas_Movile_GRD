@@ -67,4 +67,29 @@ class SyncViewModel(
             lastError = null
         )
     }
+
+    fun finalizarEntregaIncidencia(
+        uuidIncidencia: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        if (_uiState.value.isSyncing) return
+
+        viewModelScope.launch {
+            _uiState.value = SyncUiState(isSyncing = true)
+
+            try {
+                val result = repository.finalizarEntregaIncidencia(uuidIncidencia)
+                _uiState.value = if (result.ok) {
+                    SyncUiState(isSyncing = false, lastMessage = result.mensaje)
+                } else {
+                    SyncUiState(isSyncing = false, lastError = result.mensaje)
+                }
+                onResult(result.ok, result.mensaje)
+            } catch (ex: Exception) {
+                val message = ex.message ?: "No se pudo finalizar la entrega."
+                _uiState.value = SyncUiState(isSyncing = false, lastError = message)
+                onResult(false, message)
+            }
+        }
+    }
 }

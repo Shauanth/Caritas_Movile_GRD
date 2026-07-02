@@ -3,6 +3,9 @@ package pucp.edu.caritas_movile_grd.LocalBDConector
 import android.content.Context
 import android.net.Uri
 import android.util.Base64
+import java.io.ByteArrayOutputStream
+import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import java.io.File
 import org.json.JSONObject
 import android.util.Log
@@ -35,6 +38,12 @@ data class SyncResult(
     val simulacrosSincronizados: Int,
     val simulacrosDescargados: Int,
     val errores: List<String>
+)
+
+data class FinalizarEntregaResult(
+    val ok: Boolean,
+    val mensaje: String,
+    val estadoIncidencia: String? = null
 )
 
 class SyncRepository(
@@ -191,8 +200,16 @@ class SyncRepository(
                 "Sincronizando evidencia uuid=${evidencia.uuidEvidencia}, uuidReferencia=${evidencia.uuidReferencia}"
             )
             val incidencia = syncDao.getIncidenciaPorUuid(evidencia.uuidReferencia)
+            val entregaReferencia = syncDao.getEntregaPorUuid(evidencia.uuidReferencia)
 
             if (incidencia == null) {
+                if (entregaReferencia != null) {
+                    Log.d(
+                        TAG_SYNC_EVIDENCIAS,
+                        "Evidencia ${evidencia.uuidEvidencia} asociada a entrega; se sincroniza despues de la entrega."
+                    )
+                    continue
+                }
                 errores.add("No se encontró la incidencia local de la evidencia ${evidencia.uuidEvidencia}.")
                 continue
             }
@@ -914,6 +931,54 @@ class SyncRepository(
         }
     }
 
+    private suspend fun sincronizarEvidenciaEntregaPendiente(
+        evidencia: EvidenciaLocal,
+        entrega: EntregaKitLocal,
+        incidencia: IncidenciaLocal,
+        idIncidenciaRemota: String,
+        idEntregaRemota: String,
+        errores: MutableList<String>,
+        idUsuario: String
+    ): Boolean {
+        return try {
+            val responseEvidencia = mobileSyncApi.sincronizarEvidencia(
+                evidencia.toMobilePayloadEntrega(
+                    entrega = entrega,
+                    incidencia = incidencia,
+                    idIncidenciaRemota = idIncidenciaRemota,
+                    idEntregaRemota = idEntregaRemota,
+                    context = appContext,
+                    idUsuario = idUsuario
+                )
+            )
+
+            val idEvidenciaRemota = responseEvidencia.optString(
+                "idEvidenciaRemota",
+                responseEvidencia.optString("idServidor", "")
+            )
+
+            if (idEvidenciaRemota.isBlank()) {
+                errores.add("La evidencia ${evidencia.uuidEvidencia} no devolvio id remoto.")
+                false
+            } else {
+                val urlArchivo = responseEvidencia
+                    .optString("urlFirmada")
+                    .ifBlank { responseEvidencia.optString("urlArchivo") }
+                    .ifBlank { evidencia.urlS3 ?: evidencia.rutaLocal }
+
+                syncDao.marcarEvidenciaComoSincronizada(
+                    uuidEvidencia = evidencia.uuidEvidencia,
+                    urlArchivo = urlArchivo
+                )
+
+                true
+            }
+        } catch (ex: Exception) {
+            errores.add("Error al sincronizar evidencia ${evidencia.uuidEvidencia}: ${ex.message}")
+            false
+        }
+    }
+
     private suspend fun sincronizarObservacionPendiente(
         observacion: ObservacionLocal,
         incidencia: IncidenciaLocal,
@@ -1019,6 +1084,29 @@ class SyncRepository(
                     idRemoto = idEntregaRemota
                 )
 
+                val estadoActual = responseEntrega.optString("estadoActual").takeIf { it.isNotBlank() }
+                    ?: responseEntrega.optString("estadoIncidencia").takeIf { it.isNotBlank() }
+                if (estadoActual == "ATENDIDO") {
+                    syncDao.actualizarEstadoIncidencia(
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        estado = estadoActual,
+                        fechaUltimaModificacion = System.currentTimeMillis()
+                    )
+                }
+
+                val evidenciasEntrega = syncDao.getEvidenciasPendientesPorReferencia(entrega.uuidEntrega)
+                for (evidencia in evidenciasEntrega) {
+                    sincronizarEvidenciaEntregaPendiente(
+                        evidencia = evidencia,
+                        entrega = entrega.copy(idEntregaRemota = idEntregaRemota),
+                        incidencia = incidencia,
+                        idIncidenciaRemota = idIncidenciaRemota,
+                        idEntregaRemota = idEntregaRemota,
+                        errores = errores,
+                        idUsuario = idUsuario
+                    )
+                }
+
                 true
             }
         } catch (ex: Exception) {
@@ -1026,6 +1114,113 @@ class SyncRepository(
             false
         }
     }    
+
+    suspend fun finalizarEntregaIncidencia(uuidIncidencia: String): FinalizarEntregaResult {
+        val incidencia = syncDao.getIncidenciaPorUuid(uuidIncidencia)
+            ?: return FinalizarEntregaResult(false, "No se encontro la incidencia local.")
+
+        val idIncidenciaRemota = incidencia.idIncidenciaRemota
+        if (idIncidenciaRemota.isNullOrBlank()) {
+            return FinalizarEntregaResult(false, "La incidencia aun no tiene id remoto.")
+        }
+
+        val kits = kitDao.getKitsAsignadosPorIncidenciaSync(uuidIncidencia)
+        if (kits.isEmpty()) {
+            return FinalizarEntregaResult(false, "No hay kits asignados para finalizar.")
+        }
+
+        val articulosPorKit = kitDao.getArticulosAsignadosPorKitsSync(
+            kits.map { it.uuidKitAsignado }
+        ).groupBy { it.uuidKitAsignado }
+
+        val faltanKits = kits.any { kit ->
+            when (kit.estadoEntrega) {
+                "ENTREGADO" -> false
+                "PARCIAL" -> {
+                    val articulos = articulosPorKit[kit.uuidKitAsignado].orEmpty()
+                    articulos.isEmpty() || articulos.any { !it.confirmado || it.cantidadEntregada <= 0 }
+                }
+                else -> true
+            }
+        }
+
+        if (faltanKits) {
+            return FinalizarEntregaResult(
+                ok = false,
+                mensaje = "Aun hay kits sin entregar. Completa todas las entregas antes de finalizar."
+            )
+        }
+
+        Log.d(
+            "SyncRepository",
+            "Finalizando entrega incidencia uuid=${incidencia.uuidIncidencia}, idRemota=$idIncidenciaRemota"
+        )
+
+        val payload = JSONObject().apply {
+            put("uuidIncidencia", incidencia.uuidIncidencia)
+            put("idIncidenciaRemota", idIncidenciaRemota)
+            putNullable("codigoCaso", incidencia.codigoCasoRemoto)
+            put("fechaFinalizacion", normalizarFechaRegistro(System.currentTimeMillis()))
+            put("kitsEntregados", org.json.JSONArray().apply {
+                kits.forEach { kit ->
+                    val articulosArray = org.json.JSONArray().apply {
+                        articulosPorKit[kit.uuidKitAsignado].orEmpty().forEach { articulo ->
+                            put(JSONObject().apply {
+                                put("uuidArticuloAsignado", articulo.uuidArticuloAsignado)
+                                put("codigo", articulo.codigo)
+                                put("descripcion", articulo.descripcion)
+                                put("cantidadAsignada", articulo.cantidadAsignada)
+                                put("cantidadEntregada", articulo.cantidadEntregada)
+                                put("confirmado", articulo.confirmado)
+                            })
+                        }
+                    }
+
+                    put(JSONObject().apply {
+                        put("uuidKitAsignado", kit.uuidKitAsignado)
+                        putNullable("uuidGrupoFamiliar", kit.refIdFamilia)
+                        putNullable("idGrupoFamiliar", kit.refIdFamilia)
+                        putNullable("refIdFamilia", kit.refIdFamilia)
+                        putNullable("uuidAfectadoMovil", kit.uuidAfectado)
+                        putNullable("idPersonaAfectadaRemota", kit.idPersonaAfectadaRemota)
+                        put("tipoKit", kit.tipoKit)
+                        put("estadoEntrega", kit.estadoEntrega)
+                        put("articulos", articulosArray)
+                    })
+                }
+            })
+        }
+
+        val response = mobileSyncApi.finalizarEntrega(payload)
+        val estadoRespuesta = response.optString("estadoIncidencia")
+            .ifBlank { response.optString("estadoActual") }
+            .ifBlank { null }
+        val incidenciaAtendida = response.optBoolean("incidenciaAtendida", false) ||
+            estadoRespuesta == "ATENDIDO"
+
+        if (!incidenciaAtendida) {
+            return FinalizarEntregaResult(
+                ok = false,
+                mensaje = response.optString(
+                    "message",
+                    "El backend no confirmo la finalizacion de entrega."
+                ),
+                estadoIncidencia = estadoRespuesta
+            )
+        }
+
+        syncDao.actualizarEstadoIncidencia(
+            uuidIncidencia = incidencia.uuidIncidencia,
+            estado = "ATENDIDO",
+            fechaUltimaModificacion = System.currentTimeMillis()
+        )
+
+        return FinalizarEntregaResult(
+            ok = true,
+            mensaje = response.optString("message", "Entrega finalizada."),
+            estadoIncidencia = "ATENDIDO"
+        )
+    }
 
 }
 
@@ -1131,7 +1326,7 @@ private fun EvidenciaLocal.toMobilePayload(
         ?: "application/octet-stream"
 
     val archivoBase64 = if (urlS3.isNullOrBlank()) {
-        leerArchivoBase64(context, rutaLocal)
+        leerArchivoBase64(context, rutaLocal, tipoSeguro, nombreSeguro)
     } else {
         null
     }
@@ -1139,6 +1334,9 @@ private fun EvidenciaLocal.toMobilePayload(
     val urlArchivoSeguro = urlS3
         ?.takeIf { it.isNotBlank() }
         ?: rutaLocal
+
+    val nombreArchivoEnvio = archivoBase64?.nombreArchivo ?: nombreSeguro
+    val tipoArchivoEnvio = archivoBase64?.contentType ?: tipoSeguro
 
     return JSONObject().apply {
         put("uuidEvidencia", uuidEvidencia)
@@ -1150,9 +1348,69 @@ private fun EvidenciaLocal.toMobilePayload(
 
         put("idUsuarioCargaGRD", idUsuario)
 
-        put("nombreArchivo", nombreSeguro)
-        put("contentType", tipoSeguro)
-        put("formatoArchivo", tipoSeguro)
+        put("nombreArchivo", nombreArchivoEnvio)
+        put("contentType", tipoArchivoEnvio)
+        put("formatoArchivo", tipoArchivoEnvio)
+        putNullable("descripcion", descripcion)
+
+        if (archivoBase64 != null) {
+            put("base64", archivoBase64.base64)
+            put("tamanoArchivo", archivoBase64.tamanoBytes)
+        } else {
+            putNullable("tamanoArchivo", tamanoArchivo)
+            put("urlArchivo", urlArchivoSeguro)
+        }
+    }
+}
+
+private fun EvidenciaLocal.toMobilePayloadEntrega(
+    entrega: EntregaKitLocal,
+    incidencia: IncidenciaLocal,
+    idIncidenciaRemota: String,
+    idEntregaRemota: String,
+    context: Context,
+    idUsuario: String
+): JSONObject {
+    val nombreSeguro = nombreArchivo
+        ?.takeIf { it.isNotBlank() }
+        ?: rutaLocal.substringAfterLast('/').substringBefore('?').ifBlank {
+            "evidencia-entrega-${uuidEvidencia}.bin"
+        }
+
+    val tipoSeguro = contentType
+        ?.takeIf { it.isNotBlank() }
+        ?: "application/octet-stream"
+
+    val archivoBase64 = if (urlS3.isNullOrBlank()) {
+        leerArchivoBase64(context, rutaLocal, tipoSeguro, nombreSeguro)
+    } else {
+        null
+    }
+
+    val urlArchivoSeguro = urlS3
+        ?.takeIf { it.isNotBlank() }
+        ?: rutaLocal
+
+    val nombreArchivoEnvio = archivoBase64?.nombreArchivo ?: nombreSeguro
+    val tipoArchivoEnvio = archivoBase64?.contentType ?: tipoSeguro
+
+    return JSONObject().apply {
+        put("uuidEvidencia", uuidEvidencia)
+
+        // EvidenciaLocal no tiene tipoReferencia; para evidencias de entrega se usa
+        // uuidReferencia = uuidEntrega y se envia este tipo al backend al sincronizar.
+        put("uuidReferencia", entrega.uuidEntrega)
+        put("idIncidenciaRemota", idIncidenciaRemota)
+        put("idReferenciaRemota", idEntregaRemota)
+        put("tipoReferencia", "ENTREGA_AYUDA_HUMANITARIA")
+        put("uuidIncidencia", incidencia.uuidIncidencia)
+        put("uuidEntrega", entrega.uuidEntrega)
+
+        put("idUsuarioCargaGRD", idUsuario)
+
+        put("nombreArchivo", nombreArchivoEnvio)
+        put("contentType", tipoArchivoEnvio)
+        put("formatoArchivo", tipoArchivoEnvio)
         putNullable("descripcion", descripcion)
 
         if (archivoBase64 != null) {
@@ -1196,41 +1454,83 @@ private fun EntregaKitLocal.toMobilePayload(
 ): JSONObject {
     return JSONObject().apply {
         put("uuidEntrega", uuidEntrega)
+        put("uuidEntregaMovil", uuidEntrega)
 
         put("uuidIncidencia", uuidIncidencia ?: incidencia.uuidIncidencia)
         put("idIncidenciaRemota", idIncidenciaRemota)
+        putNullable("codigoCaso", incidencia.codigoCasoRemoto)
 
-        put("uuidAfectadoMovil", uuidAfectado)
-        put("uuidPersonaAfectada", uuidAfectado)
-        put("uuidPersonaAfectadaMovil", uuidAfectado)
+        putNullable("uuidAfectadoMovil", uuidAfectado)
+        putNullable("uuidAfectado", uuidAfectado)
+        putNullable("uuidPersonaAfectada", uuidAfectado)
+        putNullable("uuidPersonaAfectadaMovil", uuidAfectado)
+        putNullable("idPersonaAfectadaRemota", idPersonaAfectadaRemota)
+        putNullable("idPersonaAfectada", idPersonaAfectadaRemota)
+
+        // El modelo movil no distingue si refIdFamilia es uuidMovil o id remoto.
+        // Se envia en las claves compatibles para que backend resuelva la familia.
+        putNullable("uuidGrupoFamiliar", uuidGrupoFamiliar)
+        putNullable("idGrupoFamiliar", idGrupoFamiliar ?: refIdFamilia ?: uuidGrupoFamiliar)
+        putNullable("idGrupoFamiliarRemota", idGrupoFamiliar ?: refIdFamilia)
+        putNullable("refIdFamilia", refIdFamilia ?: uuidGrupoFamiliar)
+        putNullable("uuidKitAsignado", uuidKitAsignado)
 
         put("tipoAyuda", kitEntregado)
-        put("descripcionAyuda", "Entrega móvil de $kitEntregado")
+        put("kitEntregado", kitEntregado)
+        put("descripcionAyuda", descripcionAyuda?.takeIf { it.isNotBlank() } ?: "Entrega movil de $kitEntregado")
+        put("descripcionEntrega", descripcionAyuda?.takeIf { it.isNotBlank() } ?: "Entrega movil de $kitEntregado")
+        putNullable("observaciones", observaciones ?: descripcionAyuda)
         put("cantidadEntregada", cantidad)
         put("fechaEntrega", normalizarFechaRegistro(fechaEntrega))
 
         put("idUsuarioResponsableGRD", idUsuario)
+        put("idUsuarioGRD", idUsuario)
+
+        val articulosArray = articulosJson
+            ?.takeIf { it.isNotBlank() }
+            ?.let { org.json.JSONArray(it) }
+            ?: org.json.JSONArray()
+        put("articulos", articulosArray)
+        put("kits", org.json.JSONArray().apply {
+            put(JSONObject().apply {
+                putNullable("uuidKitAsignado", uuidKitAsignado)
+                putNullable("uuidGrupoFamiliar", uuidGrupoFamiliar)
+                putNullable("idGrupoFamiliar", idGrupoFamiliar ?: refIdFamilia ?: uuidGrupoFamiliar)
+                putNullable("refIdFamilia", refIdFamilia ?: uuidGrupoFamiliar)
+                put("tipoKit", kitEntregado)
+                put("estadoEntrega", estadoEntrega ?: "ENTREGADO")
+                put("articulos", articulosArray)
+            })
+        })
     }
 }
 
 private data class ArchivoBase64(
     val base64: String,
-    val tamanoBytes: Long
+    val tamanoBytes: Long,
+    val contentType: String? = null,
+    val nombreArchivo: String? = null
 )
 
-private fun leerArchivoBase64(context: Context, rutaLocal: String): ArchivoBase64? {
+private const val MAX_EVIDENCIA_IMAGEN_DIMENSION = 1280
+private const val MAX_EVIDENCIA_IMAGEN_BYTES = 1_500_000
+private const val JPEG_QUALITY_INICIAL = 75
+private const val JPEG_QUALITY_MINIMA = 50
+
+private fun leerArchivoBase64(
+    context: Context,
+    rutaLocal: String,
+    contentType: String?,
+    nombreArchivo: String
+): ArchivoBase64? {
     return try {
-        val bytes = if (
-            rutaLocal.startsWith("content://") ||
-            rutaLocal.startsWith("file://")
-        ) {
-            val uri = Uri.parse(rutaLocal)
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                input.readBytes()
-            }
+        val esImagen = esEvidenciaImagen(rutaLocal, contentType)
+
+        val bytes = if (esImagen) {
+            comprimirImagenParaEnvio(context, rutaLocal)
+                ?: leerBytesArchivo(context, rutaLocal)
         } else {
-            val file = File(rutaLocal)
-            if (file.exists()) file.readBytes() else null
+            leerBytesArchivo(context, rutaLocal)
         }
 
         if (bytes == null || bytes.isEmpty()) {
@@ -1238,12 +1538,152 @@ private fun leerArchivoBase64(context: Context, rutaLocal: String): ArchivoBase6
         } else {
             ArchivoBase64(
                 base64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
-                tamanoBytes = bytes.size.toLong()
+                tamanoBytes = bytes.size.toLong(),
+                contentType = if (esImagen) "image/jpeg" else contentType,
+                nombreArchivo = if (esImagen) normalizarNombreImagenJpeg(nombreArchivo) else nombreArchivo
             )
         }
-    } catch (_: Exception) {
+    } catch (ex: Exception) {
+        Log.w(TAG_SYNC_EVIDENCIAS, "No se pudo leer/comprimir evidencia: $rutaLocal", ex)
         null
     }
+}
+
+private fun leerBytesArchivo(context: Context, rutaLocal: String): ByteArray? {
+    return when {
+        rutaLocal.startsWith("content://") -> {
+            val uri = Uri.parse(rutaLocal)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes()
+            }
+        }
+
+        rutaLocal.startsWith("file://") -> {
+            val uri = Uri.parse(rutaLocal)
+            val file = File(uri.path ?: return null)
+            if (file.exists()) file.readBytes() else null
+        }
+
+        else -> {
+            val file = File(rutaLocal)
+            if (file.exists()) file.readBytes() else null
+        }
+    }
+}
+
+private fun esEvidenciaImagen(rutaLocal: String, contentType: String?): Boolean {
+    val mime = contentType?.lowercase(Locale.ROOT)
+    if (mime?.startsWith("image/") == true) return true
+
+    val ruta = rutaLocal.substringBefore('?').lowercase(Locale.ROOT)
+    return ruta.endsWith(".jpg") ||
+            ruta.endsWith(".jpeg") ||
+            ruta.endsWith(".png") ||
+            ruta.endsWith(".webp")
+}
+
+private fun comprimirImagenParaEnvio(context: Context, rutaLocal: String): ByteArray? {
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+
+    abrirInputStreamEvidencia(context, rutaLocal)?.use { input ->
+        BitmapFactory.decodeStream(input, null, bounds)
+    }
+
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        return null
+    }
+
+    val sampleSize = calcularInSampleSize(
+        width = bounds.outWidth,
+        height = bounds.outHeight,
+        maxDimension = MAX_EVIDENCIA_IMAGEN_DIMENSION
+    )
+
+    val decodeOptions = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = Bitmap.Config.RGB_565
+    }
+
+    val bitmapOriginal = abrirInputStreamEvidencia(context, rutaLocal)?.use { input ->
+        BitmapFactory.decodeStream(input, null, decodeOptions)
+    } ?: return null
+
+    val bitmapFinal = escalarBitmapSiNecesario(bitmapOriginal, MAX_EVIDENCIA_IMAGEN_DIMENSION)
+
+    val output = ByteArrayOutputStream()
+    var calidad = JPEG_QUALITY_INICIAL
+    var bytes: ByteArray
+
+    do {
+        output.reset()
+        bitmapFinal.compress(Bitmap.CompressFormat.JPEG, calidad, output)
+        bytes = output.toByteArray()
+        calidad -= 10
+    } while (bytes.size > MAX_EVIDENCIA_IMAGEN_BYTES && calidad >= JPEG_QUALITY_MINIMA)
+
+    if (bitmapFinal !== bitmapOriginal) {
+        bitmapFinal.recycle()
+    }
+    bitmapOriginal.recycle()
+
+    Log.d(
+        TAG_SYNC_EVIDENCIAS,
+        "Imagen comprimida para evidencia: ${bounds.outWidth}x${bounds.outHeight}, bytes=${bytes.size}"
+    )
+
+    return bytes
+}
+
+private fun abrirInputStreamEvidencia(context: Context, rutaLocal: String): java.io.InputStream? {
+    return when {
+        rutaLocal.startsWith("content://") -> {
+            context.contentResolver.openInputStream(Uri.parse(rutaLocal))
+        }
+
+        rutaLocal.startsWith("file://") -> {
+            val uri = Uri.parse(rutaLocal)
+            val file = File(uri.path ?: return null)
+            if (file.exists()) file.inputStream() else null
+        }
+
+        else -> {
+            val file = File(rutaLocal)
+            if (file.exists()) file.inputStream() else null
+        }
+    }
+}
+
+private fun calcularInSampleSize(width: Int, height: Int, maxDimension: Int): Int {
+    var inSampleSize = 1
+    var halfWidth = width / 2
+    var halfHeight = height / 2
+
+    while ((halfWidth / inSampleSize) >= maxDimension || (halfHeight / inSampleSize) >= maxDimension) {
+        inSampleSize *= 2
+    }
+
+    return inSampleSize.coerceAtLeast(1)
+}
+
+private fun escalarBitmapSiNecesario(bitmap: Bitmap, maxDimension: Int): Bitmap {
+    val ladoMayor = maxOf(bitmap.width, bitmap.height)
+    if (ladoMayor <= maxDimension) return bitmap
+
+    val escala = maxDimension.toFloat() / ladoMayor.toFloat()
+    val nuevoAncho = (bitmap.width * escala).toInt().coerceAtLeast(1)
+    val nuevoAlto = (bitmap.height * escala).toInt().coerceAtLeast(1)
+
+    return Bitmap.createScaledBitmap(bitmap, nuevoAncho, nuevoAlto, true)
+}
+
+private fun normalizarNombreImagenJpeg(nombreArchivo: String): String {
+    val base = nombreArchivo
+        .substringBeforeLast('.', nombreArchivo)
+        .ifBlank { "evidencia" }
+
+    return "$base.jpg"
 }
 
 private fun ObservacionLocal.toMobilePayload(

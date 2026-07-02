@@ -181,7 +181,7 @@ fun RealizarActividadScreen(
                 1 -> FamiliasTab(incidencia, afectados, viewModel)
                 2 -> ObservacionesTab(incidencia, viewModel)
                 3 -> EvidenciasTab(incidencia, viewModel)
-                4 -> KitsTab(incidencia, afectados, kitViewModel)
+                4 -> KitsTab(incidencia, afectados, kitViewModel, viewModel, syncViewModel)
             }
         }
     }
@@ -2152,14 +2152,35 @@ private val TIPOS_KIT = listOf(
 private fun KitsTab(
     incidencia: IncidenciaLocal,
     afectados: List<AfectadoLocal>,
-    kitViewModel: KitViewModel
+    kitViewModel: KitViewModel,
+    incidenciaViewModel: IncidenciaViewModel,
+    syncViewModel: SyncViewModel
 ) {
+    val context = LocalContext.current
+    val syncState by syncViewModel.uiState.collectAsState()
     val kitsAsignados by kitViewModel
         .getKitsAsignadosPorIncidencia(incidencia.uuidIncidencia)
         .collectAsState(initial = emptyList())
     val kitsEntregaHabilitada = kitsAsignados.firstOrNull()?.kitsEntregaHabilitada == true
     val soloLectura = esIncidenciaSoloLectura(incidencia)
     var expandedKitIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var descripcionesPorKit by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var evidenciasPorKit by remember { mutableStateOf<Map<String, List<Uri>>>(emptyMap()) }
+    var erroresPorKit by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+    var todosKitsEntregados by remember { mutableStateOf(false) }
+    var refreshCompletitud by remember { mutableIntStateOf(0) }
+    val mostrarFinalizarEntrega = incidencia.estado.trim().uppercase(Locale.ROOT) == "APROBADO" &&
+        kitsAsignados.isNotEmpty()
+
+    LaunchedEffect(kitsAsignados, refreshCompletitud) {
+        if (kitsAsignados.isNotEmpty()) {
+            kitViewModel.validarTodosKitsEntregados(incidencia.uuidIncidencia) { completos ->
+                todosKitsEntregados = completos
+            }
+        } else {
+            todosKitsEntregados = false
+        }
+    }
 
     if (kitsAsignados.isEmpty()) {
         Box(
@@ -2254,8 +2275,75 @@ private fun KitsTab(
                         expandedKitIds + kit.uuidKitAsignado
                     }
                 },
-                kitViewModel = kitViewModel
+                kitViewModel = kitViewModel,
+                incidenciaViewModel = incidenciaViewModel,
+                descripcionEntrega = descripcionesPorKit[kit.uuidKitAsignado] ?: kit.descripcionEntrega.orEmpty(),
+                evidenciasEntrega = evidenciasPorKit[kit.uuidKitAsignado].orEmpty(),
+                errorEntrega = erroresPorKit[kit.uuidKitAsignado],
+                onDescripcionChange = { descripcion ->
+                    descripcionesPorKit = descripcionesPorKit + (kit.uuidKitAsignado to descripcion)
+                    erroresPorKit = erroresPorKit + (kit.uuidKitAsignado to null)
+                },
+                onAddEvidencias = { uris ->
+                    val actuales = evidenciasPorKit[kit.uuidKitAsignado].orEmpty()
+                    evidenciasPorKit = evidenciasPorKit + (kit.uuidKitAsignado to (actuales + uris))
+                    erroresPorKit = erroresPorKit + (kit.uuidKitAsignado to null)
+                },
+                onRemoveEvidencia = { uri ->
+                    val restantes = evidenciasPorKit[kit.uuidKitAsignado].orEmpty().filterNot { it == uri }
+                    evidenciasPorKit = evidenciasPorKit + (kit.uuidKitAsignado to restantes)
+                },
+                onErrorChange = { mensaje ->
+                    erroresPorKit = erroresPorKit + (kit.uuidKitAsignado to mensaje)
+                },
+                onEntregaConfirmada = {
+                    evidenciasPorKit = evidenciasPorKit + (kit.uuidKitAsignado to emptyList())
+                    erroresPorKit = erroresPorKit + (kit.uuidKitAsignado to null)
+                    refreshCompletitud++
+                },
+                onKitsChanged = {
+                    refreshCompletitud++
+                }
             )
+        }
+
+        if (mostrarFinalizarEntrega) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!todosKitsEntregados) {
+                        Text(
+                            "Aun hay kits sin entregar. Completa todas las entregas antes de finalizar.",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (!todosKitsEntregados) {
+                                Toast.makeText(
+                                    context,
+                                    "Aun hay kits sin entregar. Completa todas las entregas antes de finalizar.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                return@Button
+                            }
+
+                            syncViewModel.finalizarEntregaIncidencia(incidencia.uuidIncidencia) { ok, mensaje ->
+                                Toast.makeText(context, mensaje, Toast.LENGTH_LONG).show()
+                                if (ok) {
+                                    incidenciaViewModel.refrescarIncidenciasAsignadas()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = todosKitsEntregados && !syncState.isSyncing,
+                        colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                    ) {
+                        Text(if (syncState.isSyncing) "Finalizando..." else "Finalizar entrega")
+                    }
+                }
+            }
         }
     }
 }
@@ -2265,17 +2353,49 @@ private fun KitAsignadoCard(
     soloLecturaIncidencia: Boolean,
     expanded: Boolean,
     onToggleExpanded: () -> Unit,
-    kitViewModel: KitViewModel
+    kitViewModel: KitViewModel,
+    incidenciaViewModel: IncidenciaViewModel,
+    descripcionEntrega: String,
+    evidenciasEntrega: List<Uri>,
+    errorEntrega: String?,
+    onDescripcionChange: (String) -> Unit,
+    onAddEvidencias: (List<Uri>) -> Unit,
+    onRemoveEvidencia: (Uri) -> Unit,
+    onErrorChange: (String?) -> Unit,
+    onEntregaConfirmada: () -> Unit,
+    onKitsChanged: () -> Unit
 ) {
+    val context = LocalContext.current
     val articulos by kitViewModel
         .getArticulosPorKit(kit.uuidKitAsignado)
         .collectAsState(initial = emptyList())
 
-    var descripcionEntrega by remember { mutableStateOf(kit.descripcionEntrega ?: "") }
+    var showEvidenciaEntregaSheet by remember { mutableStateOf(false) }
+    val cameraImageUri = remember { mutableStateOf<Uri?>(null) }
     val kitConfirmadoSincronizado = kit.estadoSync == EstadoSync.SINCRONIZADO &&
         (kit.estadoEntrega == "ENTREGADO" || kit.estadoEntrega == "PARCIAL")
     val kitSoloLectura = soloLecturaIncidencia || kit.estadoEntrega == "ENTREGADO" || kitConfirmadoSincronizado
     val articulosConfirmados = articulos.count { it.confirmado }
+    val articulosEntregados = articulos.filter { it.confirmado && it.cantidadEntregada > 0 }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraImageUri.value?.let { onAddEvidencias(listOf(it)) }
+        showEvidenciaEntregaSheet = false
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isNotEmpty()) onAddEvidencias(uris)
+        showEvidenciaEntregaSheet = false
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                java.io.File.createTempFile("IMG_ENTREGA_", ".jpg", context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES))
+            )
+            cameraImageUri.value = uri
+            cameraLauncher.launch(uri)
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2381,7 +2501,8 @@ private fun KitAsignadoCard(
                                     { checked ->
                                         kitViewModel.actualizarConfirmacionArticulo(
                                             articulo = articulo,
-                                            confirmado = checked
+                                            confirmado = checked,
+                                            onDone = onKitsChanged
                                         )
                                     }
                                 } else {
@@ -2470,7 +2591,7 @@ private fun KitAsignadoCard(
 
             OutlinedTextField(
                 value = descripcionEntrega,
-                onValueChange = { descripcionEntrega = it },
+                onValueChange = onDescripcionChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Descripción de entrega") },
                 placeholder = {
@@ -2482,38 +2603,141 @@ private fun KitAsignadoCard(
                 shape = RoundedCornerShape(10.dp)
             )
 
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFF3F4F6)
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = GREEN, modifier = Modifier.size(18.dp))
+                    Text(
+                        if (evidenciasEntrega.isEmpty()) "Sin evidencia de entrega" else "${evidenciasEntrega.size} evidencia(s) de entrega",
+                        modifier = Modifier.weight(1f),
+                        fontSize = 12.sp,
+                        color = Color(0xFF374151)
+                    )
+                    TextButton(
+                        onClick = { showEvidenciaEntregaSheet = true },
+                        enabled = !kitSoloLectura && kit.kitsEntregaHabilitada
+                    ) {
+                        Text("Agregar")
+                    }
+                }
+            }
+
+            if (evidenciasEntrega.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    evidenciasEntrega.forEachIndexed { index, uri ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Evidencia ${index + 1}",
+                                modifier = Modifier.weight(1f),
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                            IconButton(
+                                onClick = { onRemoveEvidencia(uri) },
+                                enabled = !kitSoloLectura && kit.kitsEntregaHabilitada,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Quitar evidencia", tint = Color.Gray)
+                            }
+                        }
+                    }
+                }
+            }
+
+            errorEntrega?.let { mensaje ->
+                Text(mensaje, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = {
-                        kitViewModel.marcarKitEntregado(
-                            kit = kit,
-                            descripcionEntrega = descripcionEntrega,
-                            evidenciaLocalUri = null,
-                            estadoEntrega = "PARCIAL"
-                        )
-                    },
+                    onClick = { showEvidenciaEntregaSheet = true },
                     modifier = Modifier.weight(1f),
                     enabled = !kitSoloLectura && kit.kitsEntregaHabilitada
                 ) {
-                    Text("Guardar parcial")
+                    Text("Evidencia")
                 }
 
                 Button(
                     onClick = {
-                        kitViewModel.confirmarKitCompleto(
-                            kit = kit,
-                            descripcionEntrega = descripcionEntrega
-
-                        )
+                        when {
+                            descripcionEntrega.isBlank() -> {
+                                onErrorChange("Ingresa la descripcion u observacion de entrega.")
+                            }
+                            articulosEntregados.isEmpty() -> {
+                                onErrorChange("Marca al menos un articulo entregado.")
+                            }
+                            evidenciasEntrega.isEmpty() -> {
+                                onErrorChange("Agrega al menos una evidencia de esta entrega.")
+                            }
+                            else -> {
+                                kitViewModel.confirmarEntregaKitAsignado(
+                                    kit = kit,
+                                    articulos = articulos,
+                                    descripcionEntrega = descripcionEntrega
+                                ) { result ->
+                                    result.onSuccess { entrega ->
+                                        evidenciasEntrega.forEachIndexed { index, uri ->
+                                            incidenciaViewModel.guardarEvidencia(
+                                                pucp.edu.caritas_movile_grd.Evidencias.EvidenciaLocal(
+                                                    uuidEvidencia = UUID.randomUUID().toString(),
+                                                    uuidReferencia = entrega.uuidEntrega,
+                                                    nombreArchivo = "entrega_${entrega.uuidEntrega.take(8)}_${index + 1}.jpg",
+                                                    contentType = "image/jpeg",
+                                                    descripcion = "Evidencia de entrega de ${kit.tipoKit}",
+                                                    rutaLocal = uri.toString(),
+                                                    estadoSync = EstadoSync.PENDIENTE_SUBIDA
+                                                )
+                                            )
+                                        }
+                                        onEntregaConfirmada()
+                                        Toast.makeText(context, "Entrega pendiente de sincronizacion", Toast.LENGTH_SHORT).show()
+                                    }.onFailure { ex ->
+                                        onErrorChange(ex.message ?: "No se pudo confirmar la entrega.")
+                                    }
+                                }
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     enabled = !kitSoloLectura && kit.kitsEntregaHabilitada,
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN)
                 ) {
-                    Text("Marcar entregado")
+                    Text("Confirmar kits")
+                }
+            }
+        }
+    }
+
+    if (showEvidenciaEntregaSheet) {
+        @OptIn(ExperimentalMaterial3Api::class)
+        ModalBottomSheet(onDismissRequest = { showEvidenciaEntregaSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Evidencia de entrega", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.CameraAlt, null, tint = GREEN) }, label = "Tomar Foto", description = "Usa la camara del dispositivo") {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
+                EvidenciaOptionCard(icon = { Icon(Icons.Default.Image, null, tint = GREEN) }, label = "Galeria", description = "Selecciona imagenes") {
+                    galleryLauncher.launch("image/*")
                 }
             }
         }
@@ -2730,6 +2954,10 @@ private fun NuevaEntregaDialog(
                         EntregaKitLocal(
                             uuidEntrega        = UUID.randomUUID().toString(),
                             uuidAfectado       = afectadoSeleccionado!!.uuidAfectado,
+                            uuidGrupoFamiliar  = afectadoSeleccionado!!.familiaId,
+                            refIdFamilia       = afectadoSeleccionado!!.familiaId,
+                            idGrupoFamiliar    = afectadoSeleccionado!!.familiaId,
+                            idPersonaAfectadaRemota = afectadoSeleccionado!!.idAfectadoRemoto,
                             uuidIncidencia     = uuidIncidencia,
                             idIncidenciaRemota = idIncidenciaRemota,
                             kitEntregado       = "$kitSeleccionado ($tipoEntrega)",

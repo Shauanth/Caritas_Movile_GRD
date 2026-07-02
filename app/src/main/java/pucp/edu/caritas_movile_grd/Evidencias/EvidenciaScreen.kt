@@ -234,7 +234,7 @@ private fun EvidenciaItem(evidencia: EvidenciaLocal, onDelete: () -> Unit) {
                 when {
                     tipo == TipoEvidencia.IMAGEN && urlRemota != null -> {
                         val conn = java.net.URL(urlRemota).openConnection() as java.net.HttpURLConnection
-                        conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+                        conn.connectTimeout = 45_000; conn.readTimeout = 90_000
                         try {
                             val bytes = conn.inputStream.readBytes()
                             decodificarMiniatura(bytes, 512)

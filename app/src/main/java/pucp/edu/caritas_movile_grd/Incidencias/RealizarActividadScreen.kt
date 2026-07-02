@@ -74,6 +74,11 @@ private val SITUACIONES_ESPECIALES_AFECTADO = listOf(
 private fun esIncidenciaSoloLectura(incidencia: IncidenciaLocal): Boolean =
     incidencia.estado.trim().uppercase(Locale.getDefault()) in ESTADOS_SOLO_LECTURA
 
+private fun puedeMostrarSeguimiento(incidencia: IncidenciaLocal): Boolean {
+    val estado = incidencia.estado.trim().uppercase(Locale.getDefault())
+    return estado == "ATENDIDO" || estado == "SEGUIMIENTO ABIERTO"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RealizarActividadScreen(
@@ -98,10 +103,24 @@ fun RealizarActividadScreen(
 
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val tabs = listOf("Info", "Familias", "Observaciones", "Evidencias", "Kits")
+    val seguimientoVisible = puedeMostrarSeguimiento(incidencia)
+    val tabs = buildList {
+        add("Info")
+        add("Familias")
+        add("Observaciones")
+        add("Evidencias")
+        add("Kits")
+        if (seguimientoVisible) add("Seguimiento")
+    }
     val soloLectura = esIncidenciaSoloLectura(incidencia)
     var showMapSheet by remember { mutableStateOf(false) }
     var showFinalizarDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(tabs.size) {
+        if (selectedTab >= tabs.size) {
+            selectedTab = 0
+        }
+    }
 
     val puedeFinalizarRecopilacion = incidencia.estado == "ASIGNADO" &&
         !soloLectura &&
@@ -182,6 +201,7 @@ fun RealizarActividadScreen(
                 2 -> ObservacionesTab(incidencia, viewModel)
                 3 -> EvidenciasTab(incidencia, viewModel)
                 4 -> KitsTab(incidencia, afectados, kitViewModel, viewModel, syncViewModel)
+                5 -> SeguimientoTab(incidencia, viewModel)
             }
         }
     }
@@ -663,6 +683,95 @@ private fun InfoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel)
     }
 
 
+}
+
+@Composable
+private fun SeguimientoTab(incidencia: IncidenciaLocal, viewModel: IncidenciaViewModel) {
+    val seguimientosLocales by viewModel
+        .getSeguimientos(incidencia.uuidIncidencia)
+        .collectAsState(initial = emptyList())
+    var showSeguimientoDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val soloLectura = esIncidenciaSoloLectura(incidencia)
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFF5F5F5)),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            InfoSection(label = "SEGUIMIENTO") {
+                Text(
+                    "Registra una actualizacion de seguimiento sobre la situacion del caso.",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+
+        if (seguimientosLocales.isEmpty()) {
+            item {
+                Text(
+                    "Sin seguimientos registrados.",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+            }
+        } else {
+            items(seguimientosLocales) { seguimiento ->
+                SeguimientoItem(seguimiento)
+            }
+        }
+
+        item {
+            if (!soloLectura) {
+                Button(
+                    onClick = { showSeguimientoDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = GREEN)
+                ) {
+                    Icon(Icons.Default.AddTask, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Agregar seguimiento")
+                }
+            }
+        }
+    }
+
+    if (showSeguimientoDialog) {
+        AgregarSeguimientoDialog(
+            onDismiss = { showSeguimientoDialog = false },
+            onConfirm = { situacion, descripcion, necesidades, recomendaciones ->
+                val ahora = System.currentTimeMillis()
+
+                viewModel.guardarSeguimiento(
+                    SeguimientoLocal(
+                        uuidSeguimiento = UUID.randomUUID().toString(),
+                        uuidIncidencia = incidencia.uuidIncidencia,
+                        idIncidenciaRemota = incidencia.idIncidenciaRemota,
+                        codigoCasoRemoto = incidencia.codigoCasoRemoto,
+                        situacion = situacion.trim().ifBlank { null },
+                        descripcion = descripcion.trim().ifBlank { null },
+                        necesidadesPendientes = necesidades.trim().ifBlank { null },
+                        recomendaciones = recomendaciones.trim().ifBlank { null },
+                        estado = "REGISTRADO",
+                        observaciones = null,
+                        fechaSeguimiento = ahora.toString(),
+                        estadoSync = EstadoSync.NUEVO
+                    )
+                )
+
+                showSeguimientoDialog = false
+                Toast.makeText(
+                    context,
+                    "Seguimiento guardado pendiente de sincronizacion.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1491,7 +1600,7 @@ private fun AgregarSeguimientoDialog(
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = GREEN),
-                    enabled = situacion.isNotBlank() || descripcion.length >= 5
+                    enabled = situacion.isNotBlank() || descripcion.isNotBlank()
                 ) {
                     Text("Guardar")
                 }

@@ -1715,14 +1715,17 @@ private fun SeguimientoLocal.toMobilePayload(
     idIncidenciaRemota: String,
     idUsuario: String
 ): JSONObject {
+    val idRemotoSeguro = seguimientoIdIncidenciaRemota(idIncidenciaRemota, incidencia)
+    val codigoCasoSeguro = seguimientoCodigoCasoRemoto(incidencia)
+
     return JSONObject().apply {
         put("uuidSeguimiento", uuidSeguimiento)
 
         put("uuidIncidencia", incidencia.uuidIncidencia)
         put("uuidIncidenciaMovil", incidencia.uuidIncidencia)
         put("uuidReferencia", incidencia.uuidIncidencia)
-        put("idIncidenciaRemota", idIncidenciaRemota)
-        putNullable("codigoCaso", incidencia.codigoCasoRemoto)
+        put("idIncidenciaRemota", idRemotoSeguro)
+        putNullable("codigoCaso", codigoCasoSeguro)
 
         put("idUsuarioGRD", idUsuario)
 
@@ -1735,6 +1738,17 @@ private fun SeguimientoLocal.toMobilePayload(
         putNullable("observaciones", observaciones)
     }
 }
+
+private fun SeguimientoLocal.seguimientoIdIncidenciaRemota(
+    idIncidenciaRemota: String,
+    incidencia: IncidenciaLocal
+): String = this.idIncidenciaRemota?.takeIf { it.isNotBlank() }
+    ?: idIncidenciaRemota
+
+private fun SeguimientoLocal.seguimientoCodigoCasoRemoto(
+    incidencia: IncidenciaLocal
+): String? = this.codigoCasoRemoto?.takeIf { it.isNotBlank() }
+    ?: incidencia.codigoCasoRemoto?.takeIf { it.isNotBlank() }
 
 private fun normalizarFechaRegistro(fechaRegistro: String): String {
     val millis = fechaRegistro.toLongOrNull()

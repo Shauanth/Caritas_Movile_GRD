@@ -8,6 +8,8 @@ import pucp.edu.caritas_movile_grd.LocalBDConector.EstadoSync
 data class SeguimientoLocal(
     @PrimaryKey val uuidSeguimiento: String,
     val uuidIncidencia: String,
+    val idIncidenciaRemota: String? = null,
+    val codigoCasoRemoto: String? = null,
     val situacion: String? = null,
     val descripcion: String? = null,
     val necesidadesPendientes: String? = null,

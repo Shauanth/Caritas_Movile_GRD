@@ -37,7 +37,7 @@ import pucp.edu.caritas_movile_grd.Seguimientos.SeguimientoLocal
         KitArticuloAsignadoLocal::class,
 
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
